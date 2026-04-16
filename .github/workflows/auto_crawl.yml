@@ -4,15 +4,18 @@ on:
   schedule:
     # 매주 월요일 오전 0시(UTC) -> 한국 시간으로 오전 9시 정각 실행
     - cron: '0 0 * * 1'
-  workflow_dispatch: # 형님이 원할 때 버튼 눌러서 즉시 실행도 가능하게 함
+  workflow_dispatch: # 형님이 원할 때 언제든 버튼 눌러서 즉시 실행 가능
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: 저장소 코드 가져오기
+    - name: 저장소 최신 코드 가져오기
       uses: actions/checkout@v3
+      with:
+        # 비서가 출근할 때 형님이 웹에서 수정한 최신 족보(main)를 가져오게 합니다.
+        ref: main
 
     - name: 파이썬 설치
       uses: actions/setup-python@v4
@@ -32,11 +35,15 @@ jobs:
       run: |
         git config --global user.name "MarketBot"
         git config --global user.email "bot@github.com"
-        # 1. 일단 서버의 최신 상태와 강제로 맞춥니다 (Pull)
+        
+        # 1. 작업 직전에 다시 한번 서버의 최신본을 가져와서 합칩니다 (충돌 방지 필살기)
         git pull origin main --rebase
-        # 2. 바뀐 시세 파일을 추가합니다
+        
+        # 2. 긁어온 시세 파일을 추가합니다
         git add market_stats.json
-        # 3. 커밋을 생성합니다 (바뀐 게 없어도 에러 안 나게 처리)
+        
+        # 3. 커밋 생성 (바뀐 게 없어도 오류 없이 통과)
         git commit -m "매주 정기 시세 업데이트: $(date +'%Y-%m-%d')" || exit 0
-        # 4. 이제 안전하게 밀어넣습니다
-        git push origin main
+        
+        # 4. 서버로 강제 밀어넣기 (최종 승인)
+        git push origin main --force

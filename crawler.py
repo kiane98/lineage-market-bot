@@ -16,9 +16,18 @@ def get_market_data():
     # 여기에 아이템매니아, 베이, 바로템의 시세 페이지 주소를 넣습니다.
     # 형님, 일단 구조만 잡아드릴테니 나중에 상세 주소만 확정해 주세요!
     targets = [
-        {"name": "아이템매니아", "url": "https://www.itemmania.com/"},
-        {"name": "아이템베이", "url": "https://www.itembay.com/"},
-        {"name": "바로템", "url": "https://www.barotem.com/"}
+        {
+            "name": "아이템매니아", 
+            "url": "https://www.itemmania.com/portal/market/list.html?gamecode=121&servercode=17004" 
+        },
+        {
+            "name": "아이템베이", 
+            "url": "https://www.itembay.com/item/sell/game-3828/server-30383"
+        },
+        {
+            "name": "바로템", 
+            "url": "https://www.barotem.com/product/lists/2382r902"
+        }
     ]
     
     prices = []

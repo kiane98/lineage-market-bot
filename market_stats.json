@@ -1,4 +1,20 @@
 {
-  "last_updated": "대기 중",
-  "prices": []
+    "last_updated": "2026-04-16 23:05",
+    "prices": [
+        {
+            "source": "아이템매니아",
+            "price": "확인 불가",
+            "status": "보안/오류"
+        },
+        {
+            "source": "아이템베이",
+            "price": "확인 불가",
+            "status": "보안/오류"
+        },
+        {
+            "source": "바로템",
+            "price": "확인 불가",
+            "status": "보안/오류"
+        }
+    ]
 }

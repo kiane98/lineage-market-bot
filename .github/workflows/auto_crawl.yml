@@ -13,7 +13,7 @@ jobs:
     - name: 저장소 최신 코드 가져오기
       uses: actions/checkout@v3
       with:
-        fetch-depth: 0 # 모든 기록을 다 가져오게 함
+        fetch-depth: 0 # 모든 기록을 다 가져와서 충돌을 방어합니다.
 
     - name: 파이썬 설치
       uses: actions/setup-python@v4
@@ -30,20 +30,15 @@ jobs:
       run: python crawler.py
 
     - name: 변경된 데이터 깃허브에 반영
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config --global user.name "MarketBot"
         git config --global user.email "bot@github.com"
         
-        # 1. 일단 서버의 최신 내용을 가져오기만 합니다.
-        git fetch origin main
-        
-        # 2. 바뀐 시세 파일을 추가합니다.
+        # 1. 시세 파일을 추가합니다.
         git add market_stats.json
         
-        # 3. 커밋을 만듭니다.
+        # 2. 커밋을 만듭니다. (바뀐 게 없어도 에러 안 나게 처리)
         git commit -m "매주 정기 시세 업데이트: $(date +'%Y-%m-%d')" || exit 0
         
-        # 4. [핵심] 원격 서버(origin/main) 위로 내 작업을 강제로 얹어버립니다. (Rebase push)
-        git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git main --force
+        # 3. [핵심] 서버의 상태가 어떻든 무조건 강제로 덮어씌웁니다.
+        git push origin main --force

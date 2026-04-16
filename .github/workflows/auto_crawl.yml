@@ -32,8 +32,8 @@ jobs:
       run: |
         git config --global user.name "MarketBot"
         git config --global user.email "bot@github.com"
+        # 형님, 여기 로직이 핵심입니다. 
+        # 원격 저장소의 최신 내용을 강제로 가져와서 현재 작업물과 합친 뒤 밀어넣습니다.
         git add market_stats.json
-        # 형님, 여기서 커밋이 없으면 그냥 넘어가고, 있으면 강제로 밀어넣도록 세팅했습니다.
         git commit -m "매주 정기 시세 업데이트: $(date +'%Y-%m-%d')" || exit 0
-        git push origin main --force  # <--- 강제로 밀어넣기 명령어 추가!e +'%Y-%m-%d')" || exit 0
-        git push
+        git push origin main --force

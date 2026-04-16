@@ -33,6 +33,7 @@ jobs:
         git config --global user.name "MarketBot"
         git config --global user.email "bot@github.com"
         git add market_stats.json
-        git pull --rebase origin main  #
+        # 형님, 여기서 커밋이 없으면 그냥 넘어가고, 있으면 강제로 밀어넣도록 세팅했습니다.
         git commit -m "매주 정기 시세 업데이트: $(date +'%Y-%m-%d')" || exit 0
+        git push origin main --force  # <--- 강제로 밀어넣기 명령어 추가!e +'%Y-%m-%d')" || exit 0
         git push

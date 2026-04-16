@@ -21,7 +21,7 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: 필요한 도구 설치 (크롬 브라우저 등)
+    - name: 필요한 도구 설치
       run: |
         pip install selenium
         sudo apt-get update
@@ -35,11 +35,12 @@ jobs:
         git config --global user.name "MarketBot"
         git config --global user.email "bot@github.com"
         
-        # 변경된 파일 추가
+        # [중요] 전체 파일을 add 하지 않고, 데이터 파일만 콕 집어서 추가합니다.
+        # 이렇게 해야 'workflows' 권한 에러 없이 안전하게 업데이트됩니다.
         git add market_stats.json
         
-        # 커밋 (변경 사항이 없으면 무시)
-        git commit -m "매일 정기 시세 업데이트: $(date +'%Y-%m-%d')" || exit 0
+        # 변경 사항이 있을 때만 커밋하고, 없으면 조용히 넘어갑니다.
+        git commit -m "매일 정기 시세 업데이트: $(date +'%Y-%m-%d %H:%M')" || exit 0
         
-        # 강제로 최신화
+        # 메인 브랜치로 강제 업데이트
         git push origin main --force

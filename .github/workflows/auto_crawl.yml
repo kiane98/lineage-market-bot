@@ -32,8 +32,11 @@ jobs:
       run: |
         git config --global user.name "MarketBot"
         git config --global user.email "bot@github.com"
-        # 형님, 여기 로직이 핵심입니다. 
-        # 원격 저장소의 최신 내용을 강제로 가져와서 현재 작업물과 합친 뒤 밀어넣습니다.
+        # 1. 일단 서버의 최신 상태와 강제로 맞춥니다 (Pull)
+        git pull origin main --rebase
+        # 2. 바뀐 시세 파일을 추가합니다
         git add market_stats.json
+        # 3. 커밋을 생성합니다 (바뀐 게 없어도 에러 안 나게 처리)
         git commit -m "매주 정기 시세 업데이트: $(date +'%Y-%m-%d')" || exit 0
-        git push origin main --force
+        # 4. 이제 안전하게 밀어넣습니다
+        git push origin main

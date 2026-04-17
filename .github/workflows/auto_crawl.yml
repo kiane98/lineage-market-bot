@@ -1,1 +1,45 @@
+name: Lineage Market Auto Crawler
 
+on:
+  schedule:
+    # 한국 시간(KST) 매일 오전 09:00에 실행 (UTC 00:00)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 수동 실행 버튼 활성화
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 저장소 최신 코드 가져오기
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: 파이썬 설치
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: 필요한 도구 및 크롬 설치
+      run: |
+        pip install selenium webdriver-manager beautifulsoup4
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+
+    - name: 시세 크롤러 실행
+      run: python crawler.py
+
+    - name: 변경된 데이터 깃허브에 반영
+      run: |
+        git config --global user.name "MarketBot"
+        git config --global user.email "bot@github.com"
+        
+        # [핵심] 꼬이지 않게 데이터 파일 하나만 딱 추가
+        git add market_stats.json
+        
+        # 바뀐 게 있을 때만 커밋 (지침서 수정 시도 안 함)
+        git commit -m "매일 정기 시세 업데이트: $(date +'%Y-%m-%d %H:%M')" || exit 0
+        
+        # 메인 브랜치로 강제 업데이트
+        git push origin main --force

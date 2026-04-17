@@ -35,11 +35,11 @@ jobs:
         git config --global user.name "MarketBot"
         git config --global user.email "bot@github.com"
         
-        # [핵심] 사고 방지를 위해 데이터 파일만 콕 집어서 추가합니다.
+        # [핵심] 다른 건 절대 건드리지 말고 데이터 파일만 추가!
         git add market_stats.json
         
-        # 변경 사항이 있을 때만 커밋 기록을 남깁니다.
+        # 바뀐 게 있을 때만 커밋
         git commit -m "매일 정기 시세 업데이트: $(date +'%Y-%m-%d %H:%M')" || exit 0
         
-        # 메인 브랜치로 강제 업데이트
+        # 강제로 푸시
         git push origin main --force

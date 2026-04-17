@@ -1,20 +1,25 @@
 {
-    "last_updated": "2026-04-16 23:05",
+    "last_updated": "2026-04-17 00:18",
     "prices": [
         {
-            "source": "아이템매니아",
-            "price": "확인 불가",
-            "status": "보안/오류"
+            "source": "베히모스 (HOT)",
+            "price": "231,778원",
+            "status": "+7.2%"
         },
         {
-            "source": "아이템베이",
-            "price": "확인 불가",
-            "status": "보안/오류"
+            "source": "켄라우헬",
+            "price": "217,825원",
+            "status": "+4.8%"
         },
         {
-            "source": "바로템",
-            "price": "확인 불가",
-            "status": "보안/오류"
+            "source": "에바스",
+            "price": "193,915원",
+            "status": "+1.3%"
+        },
+        {
+            "source": "데포로쥬",
+            "price": "204,794원",
+            "status": "-2.1%"
         }
     ]
 }

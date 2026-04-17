@@ -42,7 +42,7 @@ def get_market_data():
     current_market_prices = [
         {"source": "베히모스", "price": "232,000원"},
         {"source": "켄라우헬", "price": "218,000원"},
-        {"source": "에바스", "price": "194,000원"},
+        {"source": "에바", "price": "194,000원"},
         {"source": "데포로쥬", "price": "205,000원"}
     ]
 

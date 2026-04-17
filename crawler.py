@@ -41,40 +41,41 @@ def get_market_data():
     try:
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         driver.get("https://enchant-lab.com/market") 
-        time.sleep(20) # 3사 데이터 로딩까지 넉넉히 대기
-        
-        # 화면 스크롤로 하단 데이터 활성화
-        driver.execute_script("window.scrollTo(0, 1000);")
-        time.sleep(3)
+        time.sleep(20) # 데이터 로딩 대기
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         
-        # 인챈트랩의 메인 테이블에서 상위 5개 서버 추출
-        # 서버명 / 최저가 / 평균가 중 '평균가'가 3사 통합 데이터인 경우가 많음
-        rows = soup.select("tr")
+        # [수정] 인챈트랩의 'HOT' 서버와 일반 서버 리스트를 모두 포함하는 더 넓은 범위 조준
+        # 서버 이름과 시세가 들어있는 모든 행을 찾습니다.
+        all_rows = soup.select("tr")
         
-        count = 0
-        for row in rows:
-            if count >= 5: break
-            
-            cells = row.find_all("td")
-            if len(cells) >= 3:
-                name = cells[0].get_text(strip=True).replace('HOT', '').replace('NEW', '').strip()
-                # 인챈트랩 테이블 구조상 보통 2번째가 최저가, 3번째가 평균가(3사 통합)
-                avg_price = cells[2].get_text(strip=True)
-                
-                # 유효한 서버 이름인지 필터링 (숫자가 너무 많거나 짧으면 패스)
-                if len(name) > 1 and any(char.isdigit() for char in avg_price):
-                    clean_price = ''.join(filter(str.isdigit, avg_price))
-                    if len(clean_price) >= 4:
-                        scraped_prices.append({
-                            "source": name,
-                            "price": f"{int(clean_price):,}원"
-                        })
-                        count += 1
+        found_data = []
+        for row in all_rows:
+            # 텍스트 내에 '원'과 숫자가 포함된 행 위주로 탐색
+            row_text = row.get_text(separator=' ', strip=True)
+            if '원' in row_text and any(char.isdigit() for char in row_text):
+                cells = row.find_all(["td", "th"])
+                if len(cells) >= 2:
+                    # 첫 번째 칸에서 서버명 추출 (HOT/NEW 텍스트 제거)
+                    name = cells[0].get_text(strip=True).replace('HOT', '').replace('NEW', '').strip()
+                    
+                    # 가격 후보들 중 가장 적절한 평균가 추출
+                    price_val = ""
+                    for cell in cells:
+                        c_text = cell.get_text(strip=True)
+                        clean_digit = ''.join(filter(str.isdigit, c_text))
+                        if len(clean_digit) >= 4: # 1,000원 단위 이상만 가격으로 인정
+                            price_val = f"{int(clean_digit):,}원"
+                            # 보통 3사 평균가는 뒤쪽 셀에 있으므로 계속 갱신하며 마지막 것을 선택하거나 특정 순서 지정
+                    
+                    if name and price_val and name not in [d['source'] for d in found_data]:
+                        found_data.append({"source": name, "price": price_val})
+
+        # 핫 지수 순서대로 상위 5개만 컷!
+        scraped_prices = found_data[:5]
         driver.quit()
     except Exception as e:
-        print(f"수집 실패: {e}")
+        print(f"수집 오류: {e}")
 
     final_prices = []
     for item in scraped_prices:
@@ -90,4 +91,4 @@ if __name__ == "__main__":
     if result['prices']:
         with open('market_stats.json', 'w', encoding='utf-8') as f:
             json.dump(result, f, ensure_ascii=False, indent=4)
-        print(f"3사 통합 데이터 {len(result['prices'])}건 반영 성공!")
+        print(f"총 {len(result['prices'])}개 서버(5대장 포함) 수집 완료!")

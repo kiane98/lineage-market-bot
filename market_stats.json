@@ -1,4 +1,20 @@
 {
-    "last_updated": "2026-04-17 02:49",
-    "prices": []
+    "last_updated": "2026-04-17 02:53",
+    "prices": [
+        {
+            "source": "에바",
+            "price": "1,980원",
+            "status": "0.0%"
+        },
+        {
+            "source": "데포로쥬",
+            "price": "3,384원",
+            "status": "0.0%"
+        },
+        {
+            "source": "켄라우헬",
+            "price": "2,431원",
+            "status": "0.0%"
+        }
+    ]
 }

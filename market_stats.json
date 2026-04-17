@@ -1,19 +1,29 @@
 {
-    "last_updated": "2026-04-17 02:53",
+    "last_updated": "2026-04-17 03:03",
     "prices": [
         {
-            "source": "에바",
-            "price": "1,980원",
+            "source": "듀크데필",
+            "price": "2,889원",
             "status": "0.0%"
         },
         {
-            "source": "데포로쥬",
-            "price": "3,384원",
+            "source": "아스테어",
+            "price": "2,051원",
             "status": "0.0%"
         },
         {
-            "source": "켄라우헬",
-            "price": "2,431원",
+            "source": "아인하사드",
+            "price": "1,666원",
+            "status": "0.0%"
+        },
+        {
+            "source": "마프르",
+            "price": "2,691원",
+            "status": "0.0%"
+        },
+        {
+            "source": "가드리아",
+            "price": "2,380원",
             "status": "0.0%"
         }
     ]

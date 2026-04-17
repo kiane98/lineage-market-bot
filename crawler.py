@@ -26,32 +26,63 @@ def get_market_data():
     now = datetime.now().strftime('%Y-%m-%d %H:%M')
     file_path = 'market_stats.json'
     
-    # [1단계] 어제 데이터 불러오기 (백업 및 비교용)
+    # [1단계] 기존 장부 읽기 (어제 시세와 비교하기 위함)
     old_prices = {}
     if os.path.exists(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             try:
                 old_data = json.load(f)
-                # 서버명을 키로 해서 어제 가격 저장
                 for p in old_data.get('prices', []):
                     old_prices[p['source']] = p['price']
             except: pass
 
-    # [2단계] 오늘 시세 긁어오기 (현재는 기준 사이트에서 긁어온다고 가정)
-    # 실제 추출 로직이 작동하기 전까지 형님이 보여주신 최신 시세를 '오늘 시세'로 세팅
-    current_market_prices = [
-        {"source": "베히모스", "price": "232,000원"},
-        {"source": "켄라우헬", "price": "218,000원"},
-        {"source": "에바", "price": "194,000원"},
-        {"source": "데포로쥬", "price": "205,000원"}
-    ]
+    # [2단계] 위장 브라우저 세팅 (경비 로봇 속이기)
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 
-    # [3단계] 상승률 자동 계산
+    scraped_prices = []
+    try:
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+        driver.get("https://gamebit.co.kr/lineage") 
+        time.sleep(12) # 현장 상황(로딩)을 고려해 좀 더 넉넉히 대기
+        
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        rows = soup.select("table tbody tr") 
+        
+        # [형님의 특명] 거래량 상위 5대 서버 정밀 조준
+        target_servers = ["베히모스", "에바", "데포로쥬", "판도라", "켄라우헬"]
+        
+        found_data = {}
+        for row in rows:
+            cols = row.select("td")
+            if len(cols) >= 3:
+                server_name = cols[0].get_text(strip=True)
+                for target in target_servers:
+                    # 서버 이름이 정확히 일치하거나 포함되어 있는지 확인
+                    if target in server_name:
+                        price_val = cols[2].get_text(strip=True) 
+                        found_data[target] = price_val + "원"
+                        break
+        
+        # 우리가 원하는 순서대로 리스트 재구성
+        for target in target_servers:
+            if target in found_data:
+                scraped_prices.append({"source": target, "price": found_data[target]})
+                
+        driver.quit()
+    except Exception as e:
+        print(f"현장 수집 중 사고 발생: {e}")
+        # 실패 시 비상용 데이터 없이 빈 리스트로 반환 (형님 요청 사항)
+
+    # [3단계] 상승률 계산 및 최종 보고서 작성
     final_prices = []
-    for item in current_market_prices:
+    for item in scraped_prices:
         name = item["source"]
         new_p = item["price"]
-        old_p = old_prices.get(name, new_p) # 어제 기록 없으면 오늘 가격과 같다고 간주
+        old_p = old_prices.get(name, new_p) # 어제 기록 없으면 오늘 가격 기준
         
         status_text = calculate_change(old_p, new_p)
         final_prices.append({
@@ -64,6 +95,8 @@ def get_market_data():
 
 if __name__ == "__main__":
     result = get_market_data()
+    # 수집된 서버 개수 출력 (로그 확인용)
+    print(f"보고 완료: 총 {len(result['prices'])}개 서버의 진짜 시세를 획득했습니다.")
+    
     with open('market_stats.json', 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=4)
-    print("상승률 계산 및 업데이트 완료!")

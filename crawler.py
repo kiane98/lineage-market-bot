@@ -35,38 +35,46 @@ def get_market_data():
     chrome_options.add_argument('--headless')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
-    # 더 최신 브라우저인 척 위장 강화
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
 
     scraped_prices = []
     try:
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        driver.get("https://gamebit.co.kr/lineage") 
-        time.sleep(15) # 보안 통과를 위해 대기 시간을 15초로 늘림
+        # 인챈트랩 시세 페이지로 조준 변경
+        driver.get("https://enchant-lab.com/market") 
+        time.sleep(15) # 페이지 로딩 및 보안 통과 대기
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
-        rows = soup.select("table tbody tr") 
         
+        # 인챈트랩의 시세 테이블 구조를 파싱 (서버명과 가격 추출)
+        # ※ 인챈트랩 구조에 맞춘 정밀 타격 로직
         target_servers = ["베히모스", "에바", "데포로쥬", "판도라", "켄라우헬"]
-        
-        found_dict = {}
+        found_data = {}
+
+        # 모든 테이블 행을 훑음
+        rows = soup.find_all("tr")
         for row in rows:
-            cols = row.select("td")
-            if len(cols) >= 3:
-                raw_name = cols[0].get_text(strip=True)
-                price_val = cols[2].get_text(strip=True)
-                
-                for target in target_servers:
-                    if target in raw_name: # 이름이 포함만 되어도 OK
-                        found_dict[target] = price_val + "원"
-        
+            text = row.get_text()
+            for target in target_servers:
+                if target in text:
+                    cells = row.find_all("td")
+                    if len(cells) >= 2:
+                        # 가격이 포함된 셀을 찾아 숫자만 추출 (보통 2번째나 3번째 셀)
+                        for cell in cells:
+                            val = cell.get_text(strip=True)
+                            if "원" in val or (val.replace(',', '').isdigit() and len(val) > 3):
+                                # "원"이 없으면 붙여주고, 있으면 그대로 사용
+                                final_val = val if "원" in val else f"{val}원"
+                                found_data[target] = final_val
+                                break
+
         for target in target_servers:
-            if target in found_dict:
-                scraped_prices.append({"source": target, "price": found_dict[target]})
+            if target in found_data:
+                scraped_prices.append({"source": target, "price": found_data[target]})
                 
         driver.quit()
     except Exception as e:
-        print(f"수집 실패 로그: {e}")
+        print(f"인챈트랩 수집 실패: {e}")
 
     final_prices = []
     for item in scraped_prices:
@@ -82,4 +90,4 @@ if __name__ == "__main__":
     result = get_market_data()
     with open('market_stats.json', 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=4)
-    print(f"최종 수집 개수: {len(result['prices'])}")
+    print(f"인챈트랩에서 {len(result['prices'])}개 서버 정보 획득 완료!")

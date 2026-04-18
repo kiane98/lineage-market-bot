@@ -7,10 +7,6 @@ on:
     - cron: '5 0 * * *' 
   workflow_dispatch:
 
-env:
-  # 이 줄을 추가해서 경고를 없애고 엔진을 업그레이드합니다!
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: ubuntu-latest

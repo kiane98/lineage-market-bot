@@ -2,8 +2,10 @@ name: Lineage Market Auto Crawler
 
 on:
   schedule:
-    - cron: '0 0 * * *' # 매일 아침 9시 (KST)
-  workflow_dispatch: # 수동 실행 버튼
+    # 0 0 (9시 정각) 대신 05 0 (9시 5분)으로 변경! 
+    # 정각에는 봇들이 너무 몰려서 깃허브가 스케줄을 씹는 경우가 많습니다.
+    - cron: '5 0 * * *' 
+  workflow_dispatch:
 
 env:
   # 이 줄을 추가해서 경고를 없애고 엔진을 업그레이드합니다!

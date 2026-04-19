@@ -2,44 +2,51 @@ name: Lineage Market Auto Crawler
 
 on:
   schedule:
-    # 0 0 (9시 정각) 대신 05 0 (9시 5분)으로 변경! 
-    # 정각에는 봇들이 너무 몰려서 깃허브가 스케줄을 씹는 경우가 많습니다.
-    - cron: '45 23 * * *' 
+    # 한국 시간(KST) 오전 8시 45분 (UTC 23:45)
+    # 사람들이 안 몰리는 시간이라 지연 없이 칼같이 작동합니다.
+    - cron: '45 23 * * *'
   workflow_dispatch:
+
+# [추가] 깃허브 권고에 따라 Node 24 엔진을 미리 사용하도록 설정
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # [추가] 봇이 파일 수정 후 다시 올릴 수 있게 권한을 명시적으로 부여 (자동 실행 성공의 핵심)
+    permissions:
+      contents: write
+
     steps:
-    - name: 저장소 최신 코드 가져오기
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: 저장소 최신 코드 가져오기
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: 파이썬 설치
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10' # 최신 엔진에 맞게 파이썬 버전도 살짝 업!
 
-    - name: 필요한 도구 및 크롬 설치
-      run: |
-        pip install selenium webdriver-manager beautifulsoup4
-        sudo apt-get update
-        sudo apt-get install -y google-chrome-stable
+      - name: 필요한 도구 및 크롬 설치
+        run: |
+          pip install selenium webdriver-manager beautifulsoup4
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
 
-    - name: 시세 크롤러 실행
-      run: python crawler.py
+      - name: 시세 크롤러 실행
+        run: python crawler.py
 
-    - name: 변경된 데이터 깃허브에 반영
-      run: |
-        git config --global user.name "MarketBot"
-        git config --global user.email "bot@github.com"
-        
-        # 이전 찌꺼기가 남지 않게 확실히 파일만 추가
-        git add market_stats.json
-        
-        # 변경사항이 있을 때만 커밋, 없으면 통과
-        git commit -m "시세 업데이트: $(date +'%Y-%m-%d %H:%M')" || exit 0
-        
-        # 강제로 푸시하여 동기화
-        git push origin main --force
+      - name: 변경된 데이터 깃허브에 반영
+        run: |
+          git config --global user.name "MarketBot"
+          git config --global user.email "bot@github.com"
+          
+          git add market_stats.json
+          
+          # 변경사항이 있을 때만 커밋, 없으면 종료
+          git commit -m "시세 자동 업데이트: $(date +'%Y-%m-%d %H:%M')" || exit 0
+          
+          # 안전하게 메인 브랜치로 푸시
+          git push origin main

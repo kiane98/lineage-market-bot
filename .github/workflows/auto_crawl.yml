@@ -2,19 +2,18 @@ name: Lineage Market Auto Crawler
 
 on:
   schedule:
-    # 한국 시간(KST) 오전 8시 45분 (UTC 23:45)
-    # 사람들이 안 몰리는 시간이라 지연 없이 칼같이 작동합니다.
-    - cron: '45 23 * * *'
+    # 한국 시간(KST) 오전 9시 정각 (UTC 00:00)
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
-# [추가] 깃허브 권고에 따라 Node 24 엔진을 미리 사용하도록 설정
+# [핵심] Node.js 24 엔진 강제 활성화 (경고문에 나온 해결책 반영)
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    # [추가] 봇이 파일 수정 후 다시 올릴 수 있게 권한을 명시적으로 부여 (자동 실행 성공의 핵심)
+    # [권한 설정] 자동 업데이트 시 봇이 파일을 쓸 수 있게 문을 열어줍니다.
     permissions:
       contents: write
 
@@ -27,7 +26,7 @@ jobs:
       - name: 파이썬 설치
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10' # 최신 엔진에 맞게 파이썬 버전도 살짝 업!
+          python-version: '3.10' # 최신 노드 엔진에 맞춰 파이썬도 최신형으로!
 
       - name: 필요한 도구 및 크롬 설치
         run: |
@@ -45,8 +44,8 @@ jobs:
           
           git add market_stats.json
           
-          # 변경사항이 있을 때만 커밋, 없으면 종료
+          # 변경사항이 있을 때만 커밋
           git commit -m "시세 자동 업데이트: $(date +'%Y-%m-%d %H:%M')" || exit 0
           
-          # 안전하게 메인 브랜치로 푸시
+          # 메인 브랜치로 안전하게 전송
           git push origin main

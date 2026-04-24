@@ -16,7 +16,7 @@ def get_lineage_prices():
     chrome_options.add_argument('--window-size=1920,1080')
     chrome_options.add_argument('--lang=ko-KR')
     
-    # 봇 차단 우회 설정
+    # 봇 차단 우회용 헤더 설정
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
@@ -27,7 +27,7 @@ def get_lineage_prices():
 
     try:
         url = "https://enchant-lab.com/market"
-        print(f"🚀 현장 진입: {url}")
+        print(f"🚀 현장 잠입: {url}")
         driver.get(url)
         
         # 리액트 로딩 대기 (15초)
@@ -40,25 +40,29 @@ def get_lineage_prices():
         for row in rows:
             cells = row.find_elements(By.TAG_NAME, "td")
             
-            # 데이터가 있는 유효 행인지 확인 (충분한 칸이 있는지)
+            # 최소 4칸 이상 있어야 등락폭(%)까지 가져올 수 있습니다.
             if len(cells) >= 4:
                 server_name = cells[0].text.strip()
                 
                 for target in target_servers:
                     if target in server_name:
-                        # [정밀 타격] 
-                        # cells[1]: 현재 시세
-                        # cells[2]: 전일 시세 (지금 status에 잘못 들어간 값)
-                        # cells[3]: 우리가 원하는 등락폭(%)
+                        # [정밀 매칭]
+                        # cells[1]: 현재가 (예: 2,800원)
+                        # cells[2]: 전일가 (예: 2,850원) -> 지금 status에 잘못 들어가는 값
+                        # cells[3]: 등락폭 (예: -1.7%) -> 우리가 진짜 원하는 값
+                        
+                        current_price = cells[1].text.strip()
+                        change_status = cells[3].text.strip() # 4번째 칸(인덱스 3) 타겟팅
+                        
                         prices_data.append({
                             "source": target,
-                            "price": cells[1].text.strip(),
-                            "status": cells[3].text.strip() # 등락폭(%) 칸으로 타겟 변경
+                            "price": current_price,
+                            "status": change_status
                         })
-                        print(f"✅ 수집 성공: {target} - {cells[1].text.strip()} ({cells[3].text.strip()})")
+                        print(f"✅ 수집 성공: {target} | {current_price} | {change_status}")
 
     except Exception as e:
-        print(f"❌ 현장 사고: {e}")
+        print(f"❌ 현장 사고 발생: {e}")
     finally:
         driver.quit()
 
@@ -68,10 +72,10 @@ def update_json():
     new_prices = get_lineage_prices()
     
     if not new_prices:
-        print("🚨 [비상] 데이터를 가져오지 못했습니다. 저장을 중단합니다.")
+        print("🚨 [비상] 데이터를 수집하지 못했습니다. 저장을 중단합니다.")
         exit(1)
 
-    # 한국 시간(KST) 기록
+    # 한국 시간(KST)으로 기록
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M')
     data = {
         "last_updated": current_time,
@@ -81,7 +85,7 @@ def update_json():
     with open('market_stats.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
     
-    print(f"🎉 [성공] {current_time} KST 업데이트 완료!")
+    print(f"🎉 [최종 성공] {current_time} KST 업데이트 완료!")
 
 if __name__ == "__main__":
     update_json()

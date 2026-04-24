@@ -48,7 +48,7 @@ def get_lineage_prices():
                 for target in target_servers:
                     if target in server_name:
                         current_price = cells[1].text.strip()
-                        # cells[2] 대신 cells[3]을 선택해서 % 데이터를 가져옵니다.
+                        # cells[2](전일가) 대신 cells[3](등락폭)을 선택합니다.
                         change_percent = cells[3].text.strip() 
                         
                         prices_data.append({

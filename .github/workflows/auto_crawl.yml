@@ -3,9 +3,8 @@ name: Lineage Market Auto Crawler
 on:
   schedule:
     # 한국 시간(KST) 오전 9시 20분, 오후 9시 20분 실행
-    # (UTC 기준 00:20, 12:20)
     - cron: '20 0,12 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # 수동 실행 버튼 활성화
   push:
     branches:
       - main
@@ -42,9 +41,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
+          # JSON 파일만 추가합니다. (사진 파일 등은 제외)
           git add market_stats.json
           
-          # 아침/저녁 구분을 위해 KST 시간까지 정확히 남깁니다.
-          git commit -m "Auto Update: $(date +'%Y-%m-%d %H:%M') KST" || exit 0
+          # 한국 시간(KST)을 정확히 찍어서 커밋
+          git commit -m "Auto Update: $(TZ='Asia/Seoul' date +'%Y-%m-%d %H:%M') KST" || exit 0
           
+          # 강제 푸시로 이력을 깔끔하게 유지 (형님 스타일)
           git push origin main --force

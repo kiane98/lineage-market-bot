@@ -16,7 +16,7 @@ def get_lineage_prices():
     chrome_options.add_argument('--window-size=1920,1080')
     chrome_options.add_argument('--lang=ko-KR')
     
-    # 봇 차단 우회용 헤더 설정
+    # 봇 차단 우회 설정
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
@@ -40,26 +40,23 @@ def get_lineage_prices():
         for row in rows:
             cells = row.find_elements(By.TAG_NAME, "td")
             
-            # 최소 4칸 이상 있어야 등락폭(%)까지 가져올 수 있습니다.
+            # [수정 포인트] 등락폭(%)은 보통 4번째 칸(Index 3)에 있습니다.
+            # cells[0]: 서버명 / cells[1]: 현재가 / cells[2]: 전일가 / cells[3]: 등락폭(%)
             if len(cells) >= 4:
                 server_name = cells[0].text.strip()
                 
                 for target in target_servers:
                     if target in server_name:
-                        # [정밀 매칭]
-                        # cells[1]: 현재가 (예: 2,800원)
-                        # cells[2]: 전일가 (예: 2,850원) -> 지금 status에 잘못 들어가는 값
-                        # cells[3]: 등락폭 (예: -1.7%) -> 우리가 진짜 원하는 값
-                        
                         current_price = cells[1].text.strip()
-                        change_status = cells[3].text.strip() # 4번째 칸(인덱스 3) 타겟팅
+                        # cells[2] 대신 cells[3]을 선택해서 % 데이터를 가져옵니다.
+                        change_percent = cells[3].text.strip() 
                         
                         prices_data.append({
                             "source": target,
                             "price": current_price,
-                            "status": change_status
+                            "status": change_percent
                         })
-                        print(f"✅ 수집 성공: {target} | {current_price} | {change_status}")
+                        print(f"✅ 수집 성공: {target} | {current_price} | {change_percent}")
 
     except Exception as e:
         print(f"❌ 현장 사고 발생: {e}")
@@ -85,7 +82,7 @@ def update_json():
     with open('market_stats.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
     
-    print(f"🎉 [최종 성공] {current_time} KST 업데이트 완료!")
+    print(f"🎉 [업데이트 완료] {current_time} KST")
 
 if __name__ == "__main__":
     update_json()

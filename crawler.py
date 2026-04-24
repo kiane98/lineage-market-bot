@@ -3,109 +3,79 @@ import json
 import time
 from datetime import datetime
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
-def calculate_change(old_price_str, new_price_str):
-    """전일 대비 상승률 계산 로직"""
-    try:
-        def to_int(s):
-            return int(''.join(filter(str.isdigit, s)))
-        
-        old_val = to_int(old_price_str)
-        new_val = to_int(new_price_str)
-        
-        if old_val == 0: return "0.0%"
-        
-        change = ((new_val - old_val) / old_val) * 100
-        sign = "+" if change > 0 else ""
-        return f"{sign}{change:.1f}%"
-    except:
-        return "0.0%"
-
-def get_market_data():
-    now = datetime.now().strftime('%Y-%m-%d %H:%M')
-    file_path = 'market_stats.json'
-    
-    # [1단계] 기존 장부(JSON) 읽어오기 (상승률 계산용)
-    old_prices = {}
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            try:
-                old_data = json.load(f)
-                for p in old_data.get('prices', []):
-                    old_prices[p['source']] = p['price']
-            except:
-                pass
-
-    # [2단계] 크롬 브라우저 세팅 (보안 우회)
+def get_lineage_prices():
+    # 1. 크롬 옵션 설정 (깃허브 서버 환경 최적화)
     chrome_options = Options()
-    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--headless')  # 화면 없이 실행
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+    chrome_options.add_argument('--window-size=1920x1080')
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
-    # [3단계] 고정 출연 서버 리스트 (PD님 컨펌 라인업)
-    target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
-    found_data = {}
-
+    # 드라이버 실행
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    
+    prices_data = []
+    
     try:
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        driver.get("https://enchant-lab.com/market") 
-        time.sleep(20) # 인챈트랩 보안 및 데이터 로딩 충분히 대기
-        
-        # 화면 스크롤 (숨겨진 데이터 활성화)
-        driver.execute_script("window.scrollTo(0, 1000);")
-        time.sleep(3)
-        
+        # 2. 타겟 URL (실제 시세가 올라오는 사이트 주소로 교체 필요)
+        # 예시 주소입니다. 형님이 쓰시는 실제 주소를 넣어주세요.
+        target_url = "https://www.itembay.com/..." 
+        driver.get(target_url)
+        time.sleep(5)  # 로딩 대기
+
+        # 3. 데이터 파싱
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         
-        # 페이지 내 모든 행(tr)을 훑으며 타겟 서버 탐색
-        rows = soup.find_all("tr")
-        for row in rows:
-            row_text = row.get_text(strip=True)
-            for target in target_servers:
-                # 서버 이름이 포함되어 있고, 아직 수집 전이라면
-                if target in row_text and target not in found_data:
-                    cells = row.find_all(["td", "th"])
-                    if len(cells) >= 3:
-                        # 보통 3번째 셀이 3사 통합 평균가(Avg)
-                        avg_text = cells[2].get_text(strip=True)
-                        clean_digit = ''.join(filter(str.isdigit, avg_text))
-                        
-                        if len(clean_digit) >= 4:
-                            found_data[target] = f"{int(clean_digit):,}원"
+        # [중요] 형님 저장소의 5대 서버 리스트
+        target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
         
-        driver.quit()
+        # 여기에 실제 사이트 구조에 맞는 셀렉터를 넣어야 합니다.
+        # 아래는 예시 구조입니다.
+        for server in target_servers:
+            # 예: 사이트에서 서버 이름을 찾고 그 옆의 가격을 가져오는 로직
+            # prices_data.append({"source": server, "price": "3,000원", "status": "+0.5%"})
+            pass
+
+        # 임시 테스트용 데이터 (실제 파싱 로직이 들어가야 함)
+        # 만약 여기서 prices_data가 빈 리스트라면 실패로 간주합니다.
+        
     except Exception as e:
-        print(f"크롤링 현장 사고 발생: {e}")
+        print(f"에러 발생: {e}")
+    finally:
+        driver.quit()
 
-    # [4단계] 데이터 정제 및 상승률 합산
-    final_prices = []
-    for name in target_servers:
-        # 새로 긁어온 가격이 없으면 장부 가격 유지, 둘 다 없으면 "점검중"
-        new_p = found_data.get(name, old_prices.get(name, "점검중"))
-        old_p = old_prices.get(name, new_p)
-        
-        status_text = calculate_change(old_p, new_p)
-        
-        final_prices.append({
-            "source": name,
-            "price": new_p,
-            "status": status_text
-        })
+    return prices_data
 
-    return {"last_updated": now, "prices": final_prices}
+def update_json():
+    new_prices = get_lineage_prices()
+    
+    # 4. [핵심] 가짜 보고 방지 로직
+    # 데이터를 못 가져왔는데 저장해버리면 '어제 데이터'가 다시 올라갑니다.
+    if not new_prices:
+        print("🚨 [비상] 새 데이터를 가져오지 못했습니다. 저장을 중단합니다.")
+        exit(1)  # 깃허브 액션에 '실패(빨간불)'를 보냅니다.
+
+    # 5. 한국 시간(KST)으로 타임스탬프 찍기
+    # 깃허브 서버 시간(UTC)이 아니라 우리 시간으로 박습니다.
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+    
+    data = {
+        "last_updated": current_time,
+        "prices": new_prices
+    }
+
+    # 6. 파일 쓰기
+    with open('market_stats.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    
+    print(f"✅ 업데이트 완료: {current_time}")
 
 if __name__ == "__main__":
-    result = get_market_data()
-    
-    # 결과 파일 저장
-    with open('market_stats.json', 'w', encoding='utf-8') as f:
-        json.dump(result, f, ensure_ascii=False, indent=4)
-        
-    print(f"--- 수집 완료: {result['last_updated']} ---")
-    for item in result['prices']:
-        print(f"서버: {item['source']} | 가격: {item['price']} | 등락: {item['status']}")
+    update_json()

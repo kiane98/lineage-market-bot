@@ -1,7 +1,7 @@
 import os
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone # 시간 설정용 임포트
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -21,6 +21,12 @@ def get_lineage_prices():
     chrome_options.add_experimental_option('useAutomationExtension', False)
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    
+    # 자동화 감지 우회 스크립트 추가
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    })
+
     prices_data = []
 
     try:
@@ -39,18 +45,15 @@ def get_lineage_prices():
             server_name = cells[0].text.strip()
             for target in target_servers:
                 if target in server_name:
-                    # [지능형 추출] 칸 번호에 의존하지 않고 내용으로 찾습니다.
+                    # [지능형 추출] 형님이 성공하신 바로 그 로직!
                     current_price = "0원"
                     change_status = "0%"
 
-                    # 모든 칸을 훑으며 데이터 성격에 맞춰 할당
                     for cell in cells:
                         val = cell.text.strip()
                         if '원' in val and current_price == "0원":
-                            # 첫 번째로 만나는 '원'이 현재가
                             current_price = val
                         elif '%' in val:
-                            # '%'가 들어있는 칸이 우리가 찾는 등락폭
                             change_status = val
 
                     prices_data.append({
@@ -73,12 +76,15 @@ def update_json():
         print("🚨 데이터 수집 실패!")
         exit(1)
 
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+    # [핵심 수정] 서버 위치와 상관없이 무조건 한국 시간(UTC+9)으로 고정
+    kst = timezone(timedelta(hours=9))
+    current_time = datetime.now(kst).strftime('%Y-%m-%d %H:%M')
+    
     data = {"last_updated": current_time, "prices": new_prices}
 
     with open('market_stats.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-    print(f"✅ 최종 업데이트 완료: {current_time}")
+    print(f"✅ 한국 시간 기준 업데이트 완료: {current_time}")
 
 if __name__ == "__main__":
     update_json()

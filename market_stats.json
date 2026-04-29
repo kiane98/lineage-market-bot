@@ -1,30 +1,30 @@
 {
-    "last_updated": "2026-04-29 16:14",
+    "last_updated": "2026-04-30 01:19",
     "prices": [
         {
-            "source": "데포로쥬",
-            "price": "2,292원",
-            "status": "-4.5%"
-        },
-        {
             "source": "듀크데필",
-            "price": "1,000원",
-            "status": "-16.7%"
+            "price": "1,730원",
+            "status": "+73.0%"
         },
         {
             "source": "에바",
-            "price": "1,000원",
-            "status": "-23.1%"
-        },
-        {
-            "source": "켄라우헬",
-            "price": "1,571원",
-            "status": "+12.2%"
+            "price": "1,590원",
+            "status": "+59.0%"
         },
         {
             "source": "데컨",
-            "price": "1,000원",
-            "status": "-16.7%"
+            "price": "1,630원",
+            "status": "+63.0%"
+        },
+        {
+            "source": "데포로쥬",
+            "price": "2,600원",
+            "status": "+23.3%"
+        },
+        {
+            "source": "켄라우헬",
+            "price": "1,890원",
+            "status": "+20.3%"
         }
     ]
 }

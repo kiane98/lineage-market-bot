@@ -1,5 +1,5 @@
 {
-    "last_updated": "2026-06-02 08:45",
+    "last_updated": "2026-06-02 23:33",
     "prices": [
         {
             "source": "켄라우헬",
@@ -8,23 +8,23 @@
         },
         {
             "source": "데컨",
-            "price": "1,233원",
-            "status": "+18.2%"
-        },
-        {
-            "source": "듀크데필",
-            "price": "1,290원",
-            "status": "+17.3%"
+            "price": "1,209원",
+            "status": "+15.9%"
         },
         {
             "source": "데포로쥬",
-            "price": "2,600원",
-            "status": "+4.0%"
+            "price": "2,522원",
+            "status": "+0.9%"
+        },
+        {
+            "source": "듀크데필",
+            "price": "1,164원",
+            "status": "+5.8%"
         },
         {
             "source": "에바",
-            "price": "1,080원",
-            "status": "+8.0%"
+            "price": "1,000원",
+            "status": "+0.0%"
         }
     ]
 }

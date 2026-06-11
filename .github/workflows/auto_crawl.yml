@@ -2,9 +2,9 @@ name: Lineage Market Auto Crawler
 
 on:
   schedule:
-    # 한국 시간 기준 오전 07:15, 오후 19:15 실행
-    # UTC 기준: 22:15 (전날), 10:15
-    - cron: '15 10,22 * * *'
+    # 한국 시간 기준 오전 05:15, 오후 17:15 실행
+    # UTC 기준: 20:15 (전날), 08:15
+    - cron: '15 8,20 * * *'
   workflow_dispatch:
   push:
     branches:

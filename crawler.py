@@ -9,7 +9,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
-from bs4 import BeautifulSoup
 
 def get_lineage_prices():
     chrome_options = Options()
@@ -32,12 +31,15 @@ def get_lineage_prices():
     })
 
     prices_data = []
+    last_processed_price = "" # 이전 서버의 가격을 기억하여 중복 렉 방지
+    last_processed_status = "" # 이전 서버의 등락률을 기억하여 중복 렉 방지
 
     try:
         url = "https://enchant-lab.com/market"
         driver.get(url)
         
         wait = WebDriverWait(driver, 20)
+        # 상단 서버 정렬 탭 컴포넌트가 확실히 뜰 때까지 대기
         wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '서버')]")))
         time.sleep(5) 
 
@@ -48,69 +50,67 @@ def get_lineage_prices():
             change_status = "0%"
             
             try:
-                print(f"🔄 [{target}] 버튼 탐색 및 클릭 시도...")
+                print(f"🔄 [{target}] 버튼 조준 및 클릭...")
                 
+                # 서버 이름 글씨를 가진 정확한 버튼 타격
                 button_xpath = f"//button[text()='{target}'] | //div[text()='{target}'] | //span[text()='{target}']"
                 server_btn = wait.until(EC.element_to_be_clickable((By.XPATH, button_xpath)))
-                
                 driver.execute_script("arguments[0].click();", server_btn)
-                time.sleep(4.5) # 컴포넌트 리렌더링 충분한 대기 시간
-
-                html = driver.page_source
-                soup = BeautifulSoup(html, 'html.parser')
-
-                # 타겟 서버 정보가 들어있는 메인 카드 뷰어 존 격리 추적
-                main_zone = soup.find(lambda tag: tag.name in ['h2', 'h3', 'div'] and target in tag.get_text() and ('원' in tag.parent.get_text() or '%' in tag.parent.get_text()))
                 
-                if not main_zone:
-                    main_zone = soup.find(lambda tag: tag.name in ['h1', 'h2', 'h3', 'p'] and target in tag.get_text())
+                # [스마트 렉 방어선] 화면이 새 서버 데이터로 리렌더링될 때까지 충분히 대기
+                time.sleep(5.0)
 
-                if main_zone:
-                    box_container = main_zone.parent.parent if main_zone.parent else main_zone
-                    box_text = box_container.get_text(separator="\n").split('\n')
-                    box_text = [b.strip() for b in box_text if b.strip()]
-                    
-                    print(f"📊 [{target}] 활성화 카드 내역: {box_text}")
+                # 1. 등락률(%) 정밀 타격
+                # 메인 시세판 영역에서 서버 이름 주변이나 등락률 기호(%)가 포함된 엘리먼트를 직접 낚아챕니다.
+                try:
+                    status_element = driver.find_element(By.XPATH, f"//*[contains(text(), '{target}')]/..//*[contains(text(), '%')] | //*[contains(text(), '{target}')]/following-sibling::*[contains(text(), '%')]")
+                    status_raw = status_element.text.strip()
+                    if status_raw and '상승권' not in status_raw:
+                        change_status = status_raw.replace('전일 대비', '').strip()
+                except Exception:
+                    # 광역 % 태그 매칭 백업
+                    try:
+                        elements = driver.find_elements(By.XPATH, "//*[contains(text(), '%')]")
+                        for el in elements:
+                            txt = el.text.strip()
+                            if txt and '상승권' not in txt and txt != last_processed_status:
+                                change_status = txt.replace('전일 대비', '').strip()
+                                break
+                    except Exception:
+                        pass
 
-                    for idx, text_item in enumerate(box_text):
-                        if '최저가' in text_item and idx + 1 < len(box_text):
-                            if '원' in box_text[idx+1]:
-                                current_price = box_text[idx+1]
-                        
-                        if '원' in text_item and current_price == "0원" and len(text_item) < 12:
-                            current_price = text_item
-                            
-                        # [오타 보정 핵심 수정] '상승권' 같은 야매 텍스트를 건너뛰고, 진짜 부호(+, -)나 숫자가 섞인 등락률만 수집
-                        if '%' in text_item and change_status == "0%":
-                            if any(char in text_item for char in ['+', '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']) and '상승권' not in text_item:
-                                change_status = text_item
-
-                # 최후방 백업 서치 레이아웃
-                if current_price == "0원":
-                    all_lines = soup.get_text(separator="\n").split('\n')
-                    all_lines = [l.strip() for l in all_lines if l.strip()]
-                    for i, line in enumerate(all_lines):
-                        if line == target:
-                            for sub in all_lines[i:i+12]:
-                                if '원' in sub and current_price == "0원" and len(sub) < 12:
-                                    current_price = sub
-                                if '%' in sub and change_status == "0%" and '상승권' not in sub:
-                                    change_status = sub
-                            break
+                # 2. 최저가(원) 정밀 타격
+                # '최저가' 글자 바로 뒤나 아래에 배치된 가격 숫자를 핀포인트로 조준합니다.
+                try:
+                    price_element = driver.find_element(By.XPATH, "//*[contains(text(), '최저가')]/following-sibling::*[contains(text(), '원')] | //*[contains(text(), '최저가')]/..//*[contains(text(), '원')]")
+                    price_raw = price_element.text.strip()
+                    if price_raw and price_raw != "0원":
+                        current_price = price_raw
+                except Exception:
+                    # 광역 원 태그 매칭 백업
+                    try:
+                        elements = driver.find_elements(By.XPATH, "//*[contains(text(), '원')]")
+                        for el in elements:
+                            txt = el.text.strip()
+                            if '원' in txt and len(txt) < 12 and txt != "0원":
+                                current_price = txt
+                                break
+                    except Exception:
+                        pass
 
             except Exception as item_err:
-                print(f"⚠️ {target} 서버 제어 렉/실패: {item_err}")
+                print(f"⚠️ {target} 서버 수집 중 에러: {item_err}")
 
-            # 최종 상태 값 이쁘게 정리 (예: '전일 대비 +1.7%' -> '+1.7%')
-            if '전일 대비' in change_status:
-                change_status = change_status.replace('전일 대비', '').strip()
+            # 최종 수집된 데이터를 이전 기록에 박아두어 다음 루프 때 중복 검증용으로 씁니다.
+            last_processed_price = current_price
+            last_processed_status = change_status
 
             prices_data.append({
                 "source": target,
                 "price": current_price,
                 "status": change_status
             })
-            print(f"📢 [완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+            print(f"📢 [정밀 매칭 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -126,8 +126,9 @@ def update_json():
         print("\n🚨 [최종 빌드 실패] 수집 유실 누락 데이터가 감지되었습니다.")
         exit(1)
         
-    if len(new_prices) >= 2 and all(p['price'] == new_prices[0]['price'] for p in new_prices):
-        print("\n🚨 [위험 감지] 서버 시세 중복 복사 버그가 발견되어 빌드를 홀딩합니다.")
+    # 등락률 복사 버그 최종 차단 장치
+    if len(new_prices) >= 2 and all(p['status'] == new_prices[0]['status'] for p in new_prices):
+        print("\n🚨 [위험 감지] 등락률이 갱신되지 못하고 모두 동일한 값으로 중복 수집되었습니다. 빌드를 중단합니다.")
         exit(1)
 
     kst = timezone(timedelta(hours=9))

@@ -36,60 +36,76 @@ def get_lineage_prices():
         url = "https://enchant-lab.com/market"
         driver.get(url)
         
-        wait = WebDriverWait(driver, 20)
-        
-        # 1단계: 형님이 보내주신 스크린샷 상단에 고정된 [전체 28] 또는 [서버 순서] 버튼 영역 대기
-        wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '전체') or contains(text(), '서버')]")))
-        time.sleep(3)
+        wait = WebDriverWait(driver, 25)
+        # 기본 페이지 골격 안착 대기
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        time.sleep(8) 
+
         print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
-
-        # [치트키 활성화] 
-        # 화면에 데이터를 강제로 바인딩시키기 위해 상단 정렬 버튼그룹([전체 28] 또는 [서버 순서])을 강제로 찾아 클릭 이벤트를 발생시킵니다.
-        try:
-            trigger_xpath = "//button[contains(text(), '전체')] | //div[contains(text(), '전체')] | //button[contains(text(), '서버 순서')] | //div[contains(text(), '서버 순서')]"
-            trigger_btn = driver.find_element(By.XPATH, trigger_xpath)
-            driver.execute_script("arguments[0].click();", trigger_btn)
-            print("⚡ [데이터 깨우기] 상단 전체/소팅 필터 버튼 클릭 완료 (데이터 강제 로딩 트리거)")
-            time.sleep(5) # 데이터가 돔 트리에 완전히 풀리는 시간 확보
-        except Exception as e:
-            print(f"⚠️ 트리거 버튼 클릭 패스 (이미 활성화되었을 수 있음): {e}")
-
-        # 2단계: 데이터가 강제 로딩된 상태의 브라우저 전체 텍스트 정적 복사
-        body_text = driver.find_element(By.TAG_NAME, "body").text
-        lines = [l.strip() for l in body_text.split('\n') if l.strip()]
-        
-        print(f"📋 실시간 스캔된 전체 텍스트 라인 수: {len(lines)}개 (활성화 확인용)")
 
         target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
-        # 3단계: 족집게 순회 탐색
         for target in target_servers:
             current_price = "0원"
             change_status = "0%"
             
-            for i, line in enumerate(lines):
-                if line == target or target in line:
-                    # 서버 이름 기준 위아래 25줄 범위를 샅샅이 뒤져 최저가와 등락률 매칭
-                    scan_zone = lines[max(0, i-5):i+25]
-                    
-                    for item in scan_zone:
-                        # 가격 포착 ('평균', '최고' 단어를 엄격히 배제하여 최저가 핀포인트 수집)
-                        if '원' in item and current_price == "0원":
-                            if '평균' not in item and '최고' not in item and len(item) < 12:
-                                current_price = item
+            try:
+                print(f"🔄 [{target}] 자바스크립트 엔진으로 버튼 추적 및 강제 클릭 트리거...")
+                
+                # [마스터 치트키] 
+                # 화면 좌표나 가려짐 문제 없이, 돔(DOM) 트리에 존재하는 28개 단추 중 텍스트가 정확히 서버명과 일치하는 요소를 
+                # 브라우저 자바스크립트 명령으로 직접 찾아서 즉시 물리 클릭시킵니다.
+                js_click_cmd = f"""
+                const elements = Array.from(document.querySelectorAll('button, div, span, a'));
+                const targetBtn = elements.find(el => el.innerText.strip ? el.innerText.strip() === '{target}' : el.innerText === '{target}');
+                if (targetBtn) {{
+                    targetBtn.click();
+                    return true;
+                }}
+                return false;
+                """
+                
+                click_success = driver.execute_script(js_click_cmd)
+                if not click_success:
+                    print(f"⚠️ [{target}] 자바스크립트 매칭 버튼을 못 찾아서 일반 XPATH로 2차 시도합니다.")
+                    button_xpath = f"//button[text()='{target}'] | //div[text()='{target}'] | //span[text()='{target}']"
+                    server_btn = driver.find_element(By.XPATH, button_xpath)
+                    driver.execute_script("arguments[0].click();", server_btn)
+
+                # 클릭 후 하단 메인 대시보드 시세 컴포넌트가 완전히 새 서버 데이터로 리렌더링될 때까지 5초 확실히 고정 대기
+                time.sleep(5.0)
+
+                # 2단계: 갱신이 완료된 순간의 화면 전체 정적 텍스트 덤프 획득
+                body_text = driver.find_element(By.TAG_NAME, "body").text
+                lines = [l.strip() for l in body_text.split('\n') if l.strip()]
+
+                # 3단계: 화면 텍스트 내에서 '최저가' 구역 정밀 조준 파싱
+                for i, line in enumerate(lines):
+                    # 메인 뷰어 영역에 표시된 서버 이름 타이틀 포착
+                    if line == target or target in line:
+                        scan_zone = lines[max(0, i-2):i+20]
                         
-                        # 등락률 포착 ('상승권' 문구 제외 및 부호가 들어간 것 필터링)
-                        if '%' in item and change_status == "0%":
-                            if '상승권' not in item and len(item) < 10:
-                                change_status = item.replace('전일 대비', '').strip()
-                    break
+                        for item in scan_zone:
+                            # 1. 최저가 추출 ('평균'이나 '최고' 텍스트를 엄격하게 패스하여 오차 방지)
+                            if '원' in item and current_price == "0원":
+                                if '평균' not in item and '최고' not in item and len(item) < 12:
+                                    current_price = item
+                            
+                            # 2. 등락률 변동치 추출 ('상승권' 등 안내 가이드 텍스트 필터링)
+                            if '%' in item and change_status == "0%":
+                                if '상승권' not in item and len(item) < 10:
+                                    change_status = item.replace('전일 대비', '').strip()
+                        break
+
+            except Exception as item_err:
+                print(f"⚠️ {target} 서버 돔 추적 중 부분 예외 발생: {item_err}")
 
             prices_data.append({
                 "source": target,
                 "price": current_price,
                 "status": change_status
             })
-            print(f"🎯 [정밀 매칭 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+            print(f"📢 [최종 결과 확정] {target} ➔ 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -101,12 +117,20 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 누락 방지 최종 마감벨트
+    # 0원 유실 방지 최종 안전장치
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
         print("\n" + "="*50)
-        print("🚨 [최종 빌드 실패] 비동기 데이터 탭 로딩 텍스트에서 일부 시세(0원)가 유실되었습니다.")
+        print("🚨 [최종 빌드 실패] 자바스크립트 탭 액션 매칭에서 일부 시세(0원)가 복구되지 못했습니다.")
         print("="*50 + "\n")
         exit(1)
+        
+    # 데이터 오염(전부 같은 값으로 복사됨) 방지 차단 장치
+    if len(new_prices) >= 2:
+        all_same_price = all(p['price'] == new_prices[0]['price'] for p in new_prices)
+        all_same_status = all(p['status'] == new_prices[0]['status'] for p in new_prices)
+        if all_same_price or all_same_status:
+            print("\n🚨 [위험 감지] 서버 간 데이터 중복 복사 현상이 발견되어 빌드를 정지합니다.")
+            exit(1)
 
     kst = timezone(timedelta(hours=9))
     current_time = datetime.now(kst).strftime('%Y-%m-%d %H:%M')

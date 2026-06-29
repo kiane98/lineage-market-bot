@@ -5,6 +5,9 @@ from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
@@ -33,81 +36,85 @@ def get_lineage_prices():
     try:
         url = "https://enchant-lab.com/market"
         driver.get(url)
-        time.sleep(15) # Next.js 내부 데이터 스크립트 적재 대기
+        
+        # 기본 컴포넌트 로딩 대기 (최대 20초)
+        wait = WebDriverWait(driver, 20)
+        
+        # 캡처본에 보이는 상단 서버 정렬 탭 버튼 영역이 뜰 때까지 대기
+        wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '서버 정렬')]")))
+        time.sleep(3)
 
-        print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
+        target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
-        # 1단계: Next.js 프레임워크가 숨겨놓은 마스터 데이터 스크립트 태그 타격
-        html = driver.page_source
-        soup = BeautifulSoup(html, 'html.parser')
-        next_data_script = soup.find('script', id='__NEXT_DATA__')
-
-        # 2단계: 만약 해당 태그가 있다면 통째로 JSON 파싱 (가장 깨끗한 정석 방식)
-        if next_data_script:
-            try:
-                json_data = json.loads(next_data_script.string)
-                # Next.js 내부 구조를 타고 들어가서 28개 서버 스냅샷 데이터 배열 확보
-                # 일반적인 Next.js의 pageProps 내부에서 marketData나 snapshots 위치를 추적합니다.
-                props = json_data.get('props', {}).get('pageProps', {})
-                
-                # 데이터 통이 묶여있는 키값 유연하게 탐색
-                market_data = props.get('marketData', props.get('initialState', {}).get('market', {}))
-                snapshots = market_data.get('snapshots', [])
-                
-                if snapshots:
-                    target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
-                    for target in target_servers:
-                        for snap in snapshots:
-                            if snap.get('serverName') == target or snap.get('serverId') == target:
-                                price_num = snap.get('lowestPrice', 0)
-                                delta_val = snap.get('deltaPercent', 0.0)
-                                
-                                current_price = f"{price_num:,}원" if price_num else "0원"
-                                change_status = f"+{delta_val}%" if delta_val > 0 else f"{delta_val}%"
-                                if delta_val == 0: change_status = "+0.0%"
-                                
-                                prices_data.append({
-                                    "source": target,
-                                    "price": current_price,
-                                    "status": change_status
-                                })
-                                print(f"🎯 [마스터 JSON 파싱 성공] {target} | 가격: {current_price} | 상태: {change_status}")
-                                break
-            except Exception as json_err:
-                print(f"⚠️ JSON 구조 파싱 지연/실패: {json_err}")
-
-        # 3단계 [완벽 방어망]: 2단계가 막혔을 때를 대비해, 문자열 소스 전체에서 타겟 서버 텍스트 강제 슬라이싱 파싱
-        if not prices_data:
-            print("💡 3단계 텍스트 가로채기 방어선 가동...")
-            page_text = driver.page_source
-            target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
+        for target in target_servers:
+            current_price = "0원"
+            change_status = "0%"
             
-            for target in target_servers:
-                current_price = "0원"
-                change_status = "0%"
+            try:
+                print(f"🎯 [{target}] 서버 데이터 수집 시도 중...")
                 
-                # 서버명 뒤에 붙는 객체 구역을 잘라내어 가격과 등락률을 1:1 독립 매칭
-                import re
-                idx = page_text.find(f'"{target}"')
-                if idx != -1:
-                    chunk = page_text[idx:idx+300] # 서버명 기준 뒤쪽 300자만 안전하게 격리
-                    
-                    price_match = re.search(r'"lowestPrice"\s*:\s*(\d+)', chunk)
-                    if price_match:
-                        current_price = f"{int(price_match.group(1)):,}원"
+                # 1단계: 캡처본 상단에 나열된 수많은 서버 버튼 중 해당 서버이름 버튼 정밀 매칭
+                # 태그가 button이든 div이든 텍스트가 정확히 일치하는 요소를 찾아 클릭합니다.
+                button_xpath = f"//button[text()='{target}'] | //div[text()='{target}'] | //span[text()='{target}']"
+                server_btn = wait.until(EC.element_to_be_clickable((By.XPATH, button_xpath)))
+                
+                # 안전한 자바스크립트 클릭 이벤트 주입
+                driver.execute_script("arguments[0].click();", server_btn)
+                time.sleep(3.5) # 클릭 후 하단에 최저가, 최고가 카드 UI판이 갱신되는 시간 충분히 확보
+
+                # 2단계: 클릭 후 활성화된 하단 영역의 소스코드 파싱
+                html = driver.page_source
+                soup = BeautifulSoup(html, 'html.parser')
+
+                # 캡처화면에 크게 나타난 대형 타이틀 구역(예: 발라카스 -9.2%) 추적
+                # 서버 이름 바로 옆에 붙어있는 등락률(badge 또는 span)을 정확히 조준합니다.
+                main_title_zone = soup.find(lambda tag: tag.name in ['h3', 'h2', 'p'] and target in tag.get_text())
+                
+                if main_title_zone:
+                    # 해당 타이틀 블록을 포함한 하단 시세 요약 카드 박스 전체 텍스트 수집
+                    parent_box = main_title_zone.find_parent(lambda tag: tag.name in ['div', 'section'])
+                    if not parent_box:
+                        parent_box = main_title_zone.parent.parent
                         
-                    delta_match = re.search(r'"deltaPercent"\s*:\s*([-\d.]+)', chunk)
-                    if delta_match:
-                        dv = float(delta_match.group(1))
-                        change_status = f"+{dv}%" if dv > 0 else f"{dv}%"
-                        if dv == 0: change_status = "+0.0%"
-                
-                prices_data.append({
-                    "source": target,
-                    "price": current_price,
-                    "status": change_status
-                })
-                print(f"🎯 [텍스트 격리 분리 성공] {target} | 가격: {current_price} | 상태: {change_status}")
+                    box_texts = parent_box.get_text(separator="\n").split('\n')
+                    box_texts = [b.strip() for b in box_texts if b.strip()]
+                    
+                    print(f"🔍 [{target}] 활성화 구역 내부 텍스트 스캔: {box_texts}")
+
+                    # 카드 안에서 '최저가' 글자 바로 다음에 나오는 가격 노출 데이터 가로채기
+                    for idx, txt in enumerate(box_texts):
+                        if '최저가' in txt and idx + 1 < len(box_texts):
+                            next_txt = box_texts[idx+1]
+                            if '원' in next_txt:
+                                current_price = next_txt
+                        
+                        # % 등락률 데이터 가로채기
+                        if '%' in txt and change_status == "0%":
+                            change_status = txt
+
+                # 3단계 백업: 만약 특정 카드 지정이 꼬였다면 본문 인접 줄바꿈 텍스트에서 강제 선별
+                if current_price == "0원":
+                    all_lines = soup.get_text(separator="\n").split('\n')
+                    all_lines = [l.strip() for l in all_lines if l.strip()]
+                    for i, line in enumerate(all_lines):
+                        if line == target:
+                            # 이름 발견 후 아래 10줄 스캔
+                            for sub_line in all_lines[i:i+11]:
+                                if '원' in sub_line and current_price == "0원" and len(sub_line) < 12:
+                                    current_price = sub_line
+                                if '%' in sub_line and change_status == "0%":
+                                    change_status = sub_line
+                            break
+
+            except Exception as item_err:
+                print(f"⚠️ {target} 서버 클릭 제어 중 부분 렉/에러 발생: {item_err}")
+
+            prices_data.append({
+                "source": target,
+                "price": current_price,
+                "status": change_status
+            })
+            print(f"📢 [최종 매칭 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -119,15 +126,15 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 중복 복사 방지용 추가 검증 장치: 가격이나 상태가 전부 똑같다면 빌드를 실패시켜 안전하게 홀딩
-    if new_prices and len(new_prices) >= 2:
-        all_same_price = all(p['price'] == new_prices[0]['price'] for p in new_prices)
-        if all_same_price and new_prices[0]['price'] != "0원":
-            print("\n🚨 [위험 감지] 모든 서버의 시세가 동일하게 중복 복사되었습니다. 빌드를 중단합니다.")
-            exit(1)
-            
+    # 중복 복사 및 0원 유실 방지 최종 검증 장치
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
-        print("\n🚨 [최종 빌드 실패] 일부 서버의 시세가 0원으로 누락되었습니다.")
+        print("\n" + "="*50)
+        print("🚨 [최종 빌드 실패] 서버 정렬 탭 선택 후 화면 데이터 추출에 실패했습니다.")
+        print("="*50 + "\n")
+        exit(1)
+        
+    if len(new_prices) >= 2 and all(p['price'] == new_prices[0]['price'] for p in new_prices):
+        print("\n🚨 [위험 감지] 모든 서버의 시세가 갱신되지 못하고 중복 복사되었습니다.")
         exit(1)
 
     kst = timezone(timedelta(hours=9))

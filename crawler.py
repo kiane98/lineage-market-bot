@@ -26,7 +26,6 @@ def get_lineage_prices():
         print(f"⚠️ 기본 크롬 드라이버 실행 실패, 웹드라이버 매니저 시도: {driver_err}")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     
-    driver.execute_cmd_cmd = driver.execute_cdp_cmd # 하위 호환성 유지
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
     })
@@ -36,43 +35,38 @@ def get_lineage_prices():
     try:
         url = "https://enchant-lab.com/market"
         driver.get(url)
-        time.sleep(20) # 완전히 로딩될 때까지 넉넉하게 대기
+        time.sleep(20) # 리액트 카드 컴포넌트 렌더링 완벽 대기
 
         print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
 
-        # 형님이 찾으신 서버 이름 태그(h3)를 전부 수집
+        # 서버 이름 태그(h3) 탐색
         server_elements = driver.find_elements(By.TAG_NAME, "h3")
         target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
-
-        if not server_elements:
-            print("⚠️ [위험] 페이지에서 h3 태그를 찾지 못했습니다. 레이아웃이 완전히 뒤엎어졌을 수 있습니다.")
 
         for elem in server_elements:
             server_name = elem.text.strip()
             
-            # 타겟 서버 명칭 검사
             if any(target in server_name for target in target_servers):
                 matched_target = next(target for target in target_servers if target in server_name)
                 
-                # [지능형 텍스트 블록 추출]
-                # h3 태그를 포함한 상위 카드 전체(부모 div)의 텍스트를 통째로 긁어 배열로 분리합니다.
+                # [그물망 텍스트 추출] 
+                # h3 기준으로 상위 5단계 조상 div까지 범위를 넓혀 카드 전체 구역의 텍스트를 일괄 수집합니다.
+                card_text = []
                 try:
-                    # h3를 감싸는 직계 혹은 상위 조상 div 찾기
-                    parent_card = elem.find_element(By.XPATH, "./ancestor::div[1]")
-                    card_text = parent_card.text.split('\n')
-                    
-                    # 만약 긁어온 텍스트가 너무 짧으면 한 단계 더 위 부모 탐색
-                    if len(card_text) < 2:
-                        parent_card = elem.find_element(By.XPATH, "./ancestor::div[2]")
-                        card_text = parent_card.text.split('\n')
+                    # 상위 4~5단계 부모 div를 타겟팅하여 카드 내부를 전부 포괄
+                    large_container = elem.find_element(By.XPATH, "./ancestor::div[position() <= 5]")
+                    card_text = large_container.text.split('\n')
                 except Exception:
-                    # 부모 탐색 실패 시 h3 기준 주변 영역 강제 추출
+                    # 예외 발생 시 주변 상위 텍스트 일괄 파싱
                     card_text = elem.find_element(By.XPATH, "..").text.split('\n')
 
                 current_price = "0원"
                 change_status = "0%"
 
-                # 긁어온 텍스트 카드 안에서 가격과 변동률 파싱
+                # 디버깅용 수집 로그 (어떤 텍스트가 잡혔는지 분석)
+                print(f"🔍 [{matched_target}] 구역 내부에서 수집된 텍스트 목록: {card_text}")
+
+                # 추출한 텍스트 배열에서 '원'과 '%' 추출
                 for txt in card_text:
                     txt_clean = txt.strip()
                     if '원' in txt_clean and current_price == "0원":
@@ -97,11 +91,10 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 실패 시 명확하게 원인을 짚고 exit(1)로 깃허브 액션을 멈춤
     if not new_prices:
         print("\n" + "="*50)
-        print("🚨 [최종 빌드 실패] 변경된 카드형 UI에서 가격/변동률 텍스트 추출에 실패했습니다.")
-        print("💡 원인 분석: 서버 이름(h3)은 찾았으나 내부 부모 태그 텍스트 파싱 범위가 좁았을 수 있습니다.")
+        print("🚨 [최종 빌드 실패] 개편된 카드 컴포넌트 내부에서 데이터를 뽑아내지 못했습니다.")
+        print("💡 원인 분석: 위 로그의 '수집된 텍스트 목록'에 '원'과 '%'가 제대로 찍혔는지 확인하세요.")
         print("="*50 + "\n")
         exit(1)
 

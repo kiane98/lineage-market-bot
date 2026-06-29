@@ -1,13 +1,11 @@
 import os
 import json
 import time
+import re
 from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 def get_lineage_prices():
@@ -31,86 +29,78 @@ def get_lineage_prices():
     })
 
     prices_data = []
-    last_processed_price = "" # 이전 서버의 가격을 기억하여 중복 렉 방지
-    last_processed_status = "" # 이전 서버의 등락률을 기억하여 중복 렉 방지
 
     try:
         url = "https://enchant-lab.com/market"
         driver.get(url)
-        
-        wait = WebDriverWait(driver, 20)
-        # 상단 서버 정렬 탭 컴포넌트가 확실히 뜰 때까지 대기
-        wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '서버')]")))
-        time.sleep(5) 
+        time.sleep(15) # 리액트 메모리 데이터 완벽 로딩 대기
+
+        print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
+
+        # 화면이 아니라 숨겨진 페이지 소스코드 텍스트 전체를 타격
+        html_source = driver.page_source
 
         target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
         for target in target_servers:
             current_price = "0원"
             change_status = "0%"
-            
-            try:
-                print(f"🔄 [{target}] 버튼 조준 및 클릭...")
+
+            # [정밀 타격 정규식 규칙]
+            # 형님이 보내주신 원본 소스를 보면 "serverId":"데포로쥬"... "lowestPrice":1490 형태 외에도
+            # 난독화 문자열 사이에 "데포로쥬", "1,490원", "+1.7%" 구조가 1열로 인접하여 배치되어 있습니다.
+            # 서버이름 기준 뒤쪽 500글자를 잘라내어 해당 구역 안에서만 매칭시킵니다 (중복 완전 차단).
+            idx = html_source.find(f'"{target}"')
+            if idx != -1:
+                chunk = html_source[idx:idx+600]
                 
-                # 서버 이름 글씨를 가진 정확한 버튼 타격
-                button_xpath = f"//button[text()='{target}'] | //div[text()='{target}'] | //span[text()='{target}']"
-                server_btn = wait.until(EC.element_to_be_clickable((By.XPATH, button_xpath)))
-                driver.execute_script("arguments[0].click();", server_btn)
-                
-                # [스마트 렉 방어선] 화면이 새 서버 데이터로 리렌더링될 때까지 충분히 대기
-                time.sleep(5.0)
+                # 1. 시세 가격 추출 (난독화된 따옴표나 숫자를 일괄 포착)
+                # lowestPrice 뒤에 붙는 순수 숫자 또는 문자열 형태의 시세값 포착
+                price_match = re.search(r'"lowestPrice"\s*:\s*"?(\d+)"?', chunk)
+                if price_match:
+                    price_num = int(price_match.group(1))
+                    current_price = f"{price_num:,}원"
+                else:
+                    # 백업: 문자열 내에 콤마가 포함된 가격 텍스트가 있을 경우 강제 매칭
+                    text_price_match = re.search(r'([\d,]+원)', chunk)
+                    if text_price_match:
+                        current_price = text_price_match.group(1)
 
-                # 1. 등락률(%) 정밀 타격
-                # 메인 시세판 영역에서 서버 이름 주변이나 등락률 기호(%)가 포함된 엘리먼트를 직접 낚아챕니다.
-                try:
-                    status_element = driver.find_element(By.XPATH, f"//*[contains(text(), '{target}')]/..//*[contains(text(), '%')] | //*[contains(text(), '{target}')]/following-sibling::*[contains(text(), '%')]")
-                    status_raw = status_element.text.strip()
-                    if status_raw and '상승권' not in status_raw:
-                        change_status = status_raw.replace('전일 대비', '').strip()
-                except Exception:
-                    # 광역 % 태그 매칭 백업
-                    try:
-                        elements = driver.find_elements(By.XPATH, "//*[contains(text(), '%')]")
-                        for el in elements:
-                            txt = el.text.strip()
-                            if txt and '상승권' not in txt and txt != last_processed_status:
-                                change_status = txt.replace('전일 대비', '').strip()
-                                break
-                    except Exception:
-                        pass
+                # 2. 등락률 변동값 추출
+                # deltaPercent 속성값 또는 부호(+, -)가 포함된 독립 백분율 매칭
+                delta_match = re.search(r'"deltaPercent"\s*:\s*"?([-\d.]+)"?', chunk)
+                if delta_match:
+                    delta_val = float(delta_match.group(1))
+                    if delta_val > 0:
+                        change_status = f"+{delta_val}%"
+                    elif delta_val < 0:
+                        change_status = f"{delta_val}%"
+                    else:
+                        change_status = "+0.0%"
+                else:
+                    # 백업: % 기호가 들어간 문자열 추출
+                    text_delta_match = re.search(r'([+-][\d.]+\%)', chunk)
+                    if text_delta_match:
+                        change_status = text_delta_match.group(1)
 
-                # 2. 최저가(원) 정밀 타격
-                # '최저가' 글자 바로 뒤나 아래에 배치된 가격 숫자를 핀포인트로 조준합니다.
-                try:
-                    price_element = driver.find_element(By.XPATH, "//*[contains(text(), '최저가')]/following-sibling::*[contains(text(), '원')] | //*[contains(text(), '최저가')]/..//*[contains(text(), '원')]")
-                    price_raw = price_element.text.strip()
-                    if price_raw and price_raw != "0원":
-                        current_price = price_raw
-                except Exception:
-                    # 광역 원 태그 매칭 백업
-                    try:
-                        elements = driver.find_elements(By.XPATH, "//*[contains(text(), '원')]")
-                        for el in elements:
-                            txt = el.text.strip()
-                            if '원' in txt and len(txt) < 12 and txt != "0원":
-                                current_price = txt
-                                break
-                    except Exception:
-                        pass
-
-            except Exception as item_err:
-                print(f"⚠️ {target} 서버 수집 중 에러: {item_err}")
-
-            # 최종 수집된 데이터를 이전 기록에 박아두어 다음 루프 때 중복 검증용으로 씁니다.
-            last_processed_price = current_price
-            last_processed_status = change_status
+            # [최종 방어선] 정규식이 완전히 빗나갔을 경우를 대비한 완전 일치 텍스트 크롤링 백업
+            if current_price == "0원":
+                lines = driver.execute_script("return document.documentElement.innerText;").split('\n')
+                for i, line in enumerate(lines):
+                    if line.strip() == target:
+                        for sub in lines[i:i+15]:
+                            if '원' in sub and current_price == "0원" and '평균' not in sub and '최고' not in sub:
+                                current_price = sub.strip()
+                            if '%' in sub and change_status == "0%" and '상승권' not in sub:
+                                change_status = sub.strip()
+                        break
 
             prices_data.append({
                 "source": target,
                 "price": current_price,
                 "status": change_status
             })
-            print(f"📢 [정밀 매칭 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+            print(f"🎯 [소스 매칭 가로채기 성공] {target} ➔ 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -122,14 +112,18 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
+    # 누락(0원) 방지 최종 안전장치
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
-        print("\n🚨 [최종 빌드 실패] 수집 유실 누락 데이터가 감지되었습니다.")
+        print("\n🚨 [최종 빌드 실패] 데이터 추출 중 0원 누락이 발견되었습니다.")
         exit(1)
         
-    # 등락률 복사 버그 최종 차단 장치
-    if len(new_prices) >= 2 and all(p['status'] == new_prices[0]['status'] for p in new_prices):
-        print("\n🚨 [위험 감지] 등락률이 갱신되지 못하고 모두 동일한 값으로 중복 수집되었습니다. 빌드를 중단합니다.")
-        exit(1)
+    # 중복 복사 완전 방어 벨트: 가격이나 상태가 전부 똑같이 카피되었다면 오염 데이터로 인지하고 차단
+    if len(new_prices) >= 2:
+        all_same_price = all(p['price'] == new_prices[0]['price'] for p in new_prices)
+        all_same_status = all(p['status'] == new_prices[0]['status'] for p in new_prices)
+        if all_same_price or all_same_status:
+            print("\n🚨 [위험 감지] 서버 간 데이터 중복 복사 징후가 포착되어 빌드를 안전하게 다운시킵니다.")
+            exit(1)
 
     kst = timezone(timedelta(hours=9))
     current_time = datetime.now(kst).strftime('%Y-%m-%d %H:%M')
@@ -138,7 +132,7 @@ def update_json():
 
     with open('market_stats.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-    print(f"✅ 한국 시간 기준 시세 업데이트 완료: {current_time}")
+    print(f"✅ 한국 시간 기준 업데이트 완료: {current_time}")
 
 if __name__ == "__main__":
     update_json()

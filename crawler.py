@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
@@ -37,22 +38,18 @@ def get_lineage_prices():
 
         print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
 
-        # 브라우저의 현재 그려진 HTML 뼈대를 그대로 가져옵니다.
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
 
         target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
-        # 1안: 개편된 카드형 레이아웃 내부 정밀 스캔 (형님이 보내주신 소스 구조 타격)
-        # 보통 카드 UI들은 링크(a)나 특정 div 구조 묶음으로 서버명, 가격, 등락률을 같이 둡니다.
+        # 1안: 개편된 카드형 레이아웃 내부 정밀 스캔
         cards = soup.find_all(['div', 'a'])
         
         for target in target_servers:
             matched = False
             
-            # 모든 블록을 돌며 내가 찾는 서버 이름이 독립적으로 완벽히 들어있는 구역 추적
             for card in cards:
-                # 너무 큰 상위 컨테이너는 패스하고 텍스트 구조가 명확한 카드 묶음만 선별
                 card_text = card.get_text(separator="\n").split('\n')
                 card_text = [t.strip() for t in card_text if t.strip()]
                 
@@ -61,7 +58,6 @@ def get_lineage_prices():
                     current_price = "0원"
                     change_status = "0%"
                     
-                    # 해당 카드 컴포넌트 내부에서만 가격('원')과 등락률('%')을 정확히 조준합니다.
                     for text_item in card_text:
                         if '원' in text_item and current_price == "0원":
                             current_price = text_item
@@ -77,15 +73,15 @@ def get_lineage_prices():
                     matched = True
                     break
             
-            # 만약 위 구조로 안 잡혔을 때를 대비한 2차 백업 보정망 (텍스트 인접 노드 추적)
+            # 2안: [오타 수정 완료] 위 구조로 안 잡혔을 때를 대비한 백업 보정망
             if not matched:
                 h3_tags = soup.find_all('h3')
                 for h3 in h3_tags:
                     if h3.get_text().strip() == target:
-                        # h3가 속한 부모 구역을 긁어 파싱
                         parent_block = h3.find_parent()
                         if parent_block:
-                            block_texts = parent_block.get_text(separator="\n").split('\n")
+                            # 이 부분의 따옴표 오타(' \n ")를 (' \n ')로 완벽히 수정했습니다.
+                            block_texts = parent_block.get_text(separator="\n").split('\n')
                             block_texts = [b.strip() for b in block_texts if b.strip()]
                             
                             c_price = "0원"
@@ -112,7 +108,7 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 0원으로 꼬인 데이터가 수집되었거나 비어있다면 빌드 실패 처리하여 안전하게 홀딩
+    # 0원으로 데이터가 비어있거나 꼬였다면 빌드 실패 처리하여 안전하게 홀딩
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
         print("\n" + "="*50)
         print("🚨 [최종 빌드 실패] 데이터 중복 복사 혹은 파싱 에러 징후가 발견되었습니다.")

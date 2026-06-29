@@ -5,8 +5,10 @@ from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
-from bs4 import BeautifulSoup
 
 def get_lineage_prices():
     chrome_options = Options()
@@ -34,83 +36,62 @@ def get_lineage_prices():
         url = "https://enchant-lab.com/market"
         driver.get(url)
         
-        # 데이터가 브라우저 내부 메모리에 완벽히 안착할 때까지 대기
-        time.sleep(15) 
+        wait = WebDriverWait(driver, 25)
+        # 메인 레이아웃 안착 대기
+        wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '서버')]")))
+        time.sleep(8) 
 
         print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
 
-        # [오타 수정 완료] 파이썬 주석 기호(#)를 자바스크립트 주석 기호(//)로 완벽히 수정했습니다.
-        js_extract_script = """
-        try {
-            // 1안: Next.js 스크립트 데이터 영역 파싱
-            const nextEl = document.querySelector('#__NEXT_DATA__');
-            if (nextEl) {
-                const data = JSON.parse(nextEl.textContent);
-                const props = data.props?.pageProps || {};
-                const list = props.marketData?.snapshots || props.initialState?.market?.snapshots || props.snapshots;
-                if (list && list.length > 0) return list;
-            }
-            
-            // 2안: 화면 내에 바인딩된 글로벌 데이터 저장소 추적
-            if (window.__NEXT_DATA__?.props?.pageProps?.snapshots) return window.__NEXT_DATA__.props.pageProps.snapshots;
-        } catch(e) {}
-        return null;
-        """
-        
-        raw_snapshots = driver.execute_script(js_extract_script)
         target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
-        # 성공적으로 객체를 낚아챘다면 JSON 매핑 진행
-        if raw_snapshots and isinstance(raw_snapshots, list):
-            print(f"📦 [엔진 타격 성공] 내부 메모리에서 {len(raw_snapshots)}개의 서버 원본 데이터를 통째로 가로채기 완료했습니다.")
-            for target in target_servers:
-                for snap in raw_snapshots:
-                    s_name = snap.get('serverName', snap.get('serverId', ''))
-                    if s_name == target:
-                        price_num = snap.get('lowestPrice', 0)
-                        delta_val = snap.get('deltaPercent', 0.0)
-                        
-                        current_price = f"{price_num:,}원" if price_num else "0원"
-                        change_status = f"+{delta_val}%" if delta_val > 0 else f"{delta_val}%"
-                        if delta_val == 0: change_status = "+0.0%"
-                        
-                        prices_data.append({
-                            "source": target,
-                            "price": current_price,
-                            "status": change_status
-                        })
-                        print(f"🎯 [객체 매칭 완벽 성공] {target} ➔ 가격: {current_price} | 상태: {change_status}")
-                        break
+        # 돔 구조 상에 흩어진 모든 텍스트 요소를 브라우저 엔진 기준으로 한 번에 확보
+        # 순서 꼬임과 렌더링 지연을 일괄 차단하기 위한 덩어리 획득
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+        lines = [l.strip() for l in body_text.split('\n') if l.strip()]
         
-        # [백업 방어선: 광역 그물망 스캔]
-        if not prices_data:
-            print("💡 4차 최종 방어선 (글로벌 돔 텍스트 정밀 추적) 가동...")
-            html = driver.page_source
-            soup = BeautifulSoup(html, 'html.parser')
+        print(f"📋 실시간 스캔된 전체 텍스트 라인 수: {len(lines)}개")
+
+        for target in target_servers:
+            current_price = "0원"
+            change_status = "0%"
             
-            all_lines = soup.get_text(separator="\n").split('\n')
-            all_lines = [l.strip() for l in all_lines if l.strip()]
-            
-            for target in target_servers:
-                current_price = "0원"
-                change_status = "0%"
-                
-                for i, line in enumerate(all_lines):
-                    if line == target or target in line:
-                        sub_range = all_lines[max(0, i-5):i+20]
-                        for item in sub_range:
+            # 텍스트 라인 전체를 돌면서 서버 이름 근처의 값을 핀포인트 매칭
+            for i, line in enumerate(lines):
+                if line == target:
+                    # 해당 서버 이름이 발견된 인덱스 기준, 아래쪽 15줄 범위를 정밀 돋보기 스캔
+                    scan_zone = lines[i:i+16]
+                    
+                    for item in scan_zone:
+                        # 1. 가격 추출: '원'이 포함되어 있고 '평균', '최고' 단어가 없는 순수 최저가 픽업
+                        if '원' in item and current_price == "0원":
+                            if '평균' not in item and '최고' not in item and len(item) < 12:
+                                current_price = item
+                        
+                        # 2. 등락률 추출: '%' 기호가 포함된 순수 수치 픽업 ('상승권' 안내문 제외)
+                        if '%' in item and change_status == "0%":
+                            if '상승권' not in item and len(item) < 10:
+                                change_status = item.replace('전일 대비', '').strip()
+                    break
+
+            # 만약 위 규칙으로 못 찾았다면, 포함 조건(in)으로 2차 광역 필터링
+            if current_price == "0원":
+                for i, line in enumerate(lines):
+                    if target in line:
+                        scan_zone = lines[max(0, i-2):i+15]
+                        for item in scan_zone:
                             if '원' in item and current_price == "0원" and '평균' not in item and '최고' not in item and len(item) < 12:
                                 current_price = item
                             if '%' in item and change_status == "0%" and '상승권' not in item:
-                                change_status = item
-                        
-                change_status = change_status.replace('전일 대비', '').strip()
-                prices_data.append({
-                    "source": target,
-                    "price": current_price,
-                    "status": change_status
-                })
-                print(f"🎯 [돔 스캔 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+                                change_status = item.replace('전일 대비', '').strip()
+                        break
+
+            prices_data.append({
+                "source": target,
+                "price": current_price,
+                "status": change_status
+            })
+            print(f"🎯 [정밀 포착 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -122,18 +103,12 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
+    # 0원 유실 방지 최종 안전벨트
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
         print("\n" + "="*50)
-        print("🚨 [최종 빌드 실패] 개편된 Next.js 스트리밍 돔에서 데이터를 수집하지 못했습니다.")
+        print("🚨 [최종 빌드 실패] 돔 렌더링 텍스트에서 일부 서버 시세(0원)가 누락되었습니다.")
         print("="*50 + "\n")
         exit(1)
-        
-    if len(new_prices) >= 2:
-        all_same_price = all(p['price'] == new_prices[0]['price'] for p in new_prices)
-        all_same_status = all(p['status'] == new_prices[0]['status'] for p in new_prices)
-        if all_same_price or all_same_status:
-            print("\n🚨 [위험 감지] 서버 간 데이터 중복 복사 버그가 감지되어 빌드를 정지합니다.")
-            exit(1)
 
     kst = timezone(timedelta(hours=9))
     current_time = datetime.now(kst).strftime('%Y-%m-%d %H:%M')

@@ -31,83 +31,59 @@ def get_lineage_prices():
     })
 
     prices_data = []
+    target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
     try:
-        url = "https://enchant-lab.com/market"
-        driver.get(url)
-        
-        wait = WebDriverWait(driver, 25)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        time.sleep(8) 
-
-        print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
-
-        target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
-
+        # 숨겨진 버튼을 찾지 않고, 주소 뒤에 서버명을 직접 붙여서 대시보드를 강제 호출합니다.
         for target in target_servers:
             current_price = "0원"
             change_status = "0%"
             
             try:
-                print(f"🔄 [{target}] 버튼 엘리먼트 자바스크립트 강제 클릭 시도...")
+                # 예: https://enchant-lab.com/market/켄라우헬
+                direct_url = f"https://enchant-lab.com/market/{target}"
+                print(f"🌐 [{target}] 다이렉트 주소 이동 시도 ➔ {direct_url}")
+                driver.get(direct_url)
                 
-                # 자바스크립트 오타(.strip()) 완벽 수정 및 트림 처리 안전 보강
-                js_click_cmd = f"""
-                const elements = Array.from(document.querySelectorAll('button, div, span, a'));
-                const targetBtn = elements.find(el => {{
-                    const txt = el.innerText ? el.innerText.trim() : '';
-                    return txt === '{target}';
-                }});
-                if (targetBtn) {{
-                    targetBtn.click();
-                    return true;
-                }}
-                return false;
-                """
-                
-                click_success = driver.execute_script(js_click_cmd)
-                if not click_success:
-                    print(f"⚠️ [{target}] JS 클릭 실패, 기본 XPATH로 2차 클릭 시도...")
-                    button_xpath = f"//button[text()='{target}'] | //div[text()='{target}'] | //span[text()='{target}']"
-                    server_btn = driver.find_element(By.XPATH, button_xpath)
-                    driver.execute_script("arguments[0].click();", server_btn)
+                # 리액트 렌더링 및 통계 대시보드가 그려질 때까지 대기
+                wait = WebDriverWait(driver, 20)
+                wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                time.sleep(6.5) # 안전하게 시세판이 갱신되는 시간 확보
 
-                # 클릭 후 대시보드가 새 서버 데이터로 리렌더링될 때까지 충분히 대기
-                time.sleep(5.0)
-
-                # 데이터가 바뀐 순간의 텍스트 덤프 획득
+                # 겉화면 텍스트를 긁어 배열로 해체
                 body_text = driver.find_element(By.TAG_NAME, "body").text
                 lines = [l.strip() for l in body_text.split('\n') if l.strip()]
 
-                # 화면 텍스트 내에서 해당 서버 이름 주위 정밀 스캔 (스캔 영역 하단으로 대폭 확장)
+                # 화면 내에 해당 서버 명칭이 포함된 메인 대시보드 구역 스캔
                 for i, line in enumerate(lines):
                     if line == target or target in line:
+                        # 텍스트 발견 지점 주변 30줄을 타겟팅
                         scan_zone = lines[max(0, i-4):i+30]
                         
                         for item in scan_zone:
-                            # 1. 최저가 추출 ('평균', '최고' 단어 제외)
+                            # 1. 최저가 픽업 ('평균', '최고' 단어 제외)
                             if '원' in item and current_price == "0원":
                                 if '평균' not in item and '최고' not in item and len(item) < 12:
                                     current_price = item
                             
-                            # 2. 등락률 변동치 추출 ('상승권' 안내 텍스트 제외)
+                            # 2. 등락률 픽업 ('상승권' 문구 제외)
                             if '%' in item and change_status == "0%":
                                 if '상승권' not in item and len(item) < 10:
                                     change_status = item.replace('전일 대비', '').strip()
                         break
 
             except Exception as item_err:
-                print(f"⚠️ {target} 서버 수집 중 부분 예외 발생: {item_err}")
+                print(f"⚠️ {target} 서버 페이지 강제 로딩 중 예외 발생: {item_err}")
 
             prices_data.append({
                 "source": target,
                 "price": current_price,
                 "status": change_status
             })
-            print(f"📢 [결과 기록] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+            print(f"📢 [수집 기록 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
-        print(f"❌ 크롤링 내부 에러 발생: {e}")
+        print(f"❌ 크롤링 치명적 에러 발생: {e}")
     finally:
         driver.quit()
 
@@ -116,19 +92,19 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 0원 누락 리스크 방지 안전장치
+    # 누락 데이터 방어선
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
         print("\n" + "="*50)
-        print("🚨 [빌드 실패] 일부 서버 시세(0원)가 정상적으로 수집되지 못했습니다.")
+        print("🚨 [빌드 실패] 주소 직타 매칭에서 일부 서버 시세(0원)가 유실되었습니다.")
         print("="*50 + "\n")
         exit(1)
         
-    # 데이터 오염(전부 같은 값 복사됨) 방지 차단 장치
+    # 중복 복사 방어선
     if len(new_prices) >= 2:
         all_same_price = all(p['price'] == new_prices[0]['price'] for p in new_prices)
         all_same_status = all(p['status'] == new_prices[0]['status'] for p in new_prices)
         if all_same_price or all_same_status:
-            print("\n🚨 [위험 감지] 서버 간 데이터 중복 복사 현상이 발견되어 빌드를 홀딩합니다.")
+            print("\n🚨 [위험 감지] 서버 간 데이터 동일 중복 수집 징후가 발견되어 빌드를 안전 홀딩합니다.")
             exit(1)
 
     kst = timezone(timedelta(hours=9))

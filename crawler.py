@@ -1,12 +1,12 @@
 import os
 import json
 import time
-import re
 from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
 
 def get_lineage_prices():
     chrome_options = Options()
@@ -33,74 +33,91 @@ def get_lineage_prices():
     try:
         url = "https://enchant-lab.com/market"
         driver.get(url)
-        time.sleep(15) # 리액트 메모리 데이터 완벽 로딩 대기
+        
+        # 데이터가 브라우저 내부 메모리에 완벽히 안착할 때까지 대기
+        time.sleep(15) 
 
         print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
 
-        # 화면이 아니라 숨겨진 페이지 소스코드 텍스트 전체를 타격
-        html_source = driver.page_source
-
+        # [마스터 탈취 키] 브라우저 콘솔창 내부의 리액트/넥스트 하이드레이션 객체를 직접 해독
+        # 화면의 정렬 버튼 상태나 탭 클릭 여부와 관계없이 28개 서버 원본 배열을 강제로 뽑아냅니다.
+        js_extract_script = """
+        try {
+            // 1안: Next.js 스크립트 데이터 영역 파싱
+            const nextEl = document.querySelector('#__NEXT_DATA__');
+            if (nextEl) {
+                const data = JSON.parse(nextEl.textContent);
+                const props = data.props?.pageProps || {};
+                const list = props.marketData?.snapshots || props.initialState?.market?.snapshots || props.snapshots;
+                if (list && list.length > 0) return list;
+            }
+            
+            # 2안: 화면 내에 바인딩된 글로벌 데이터 저장소 추적
+            if (window.__NEXT_DATA__?.props?.pageProps?.snapshots) return window.__NEXT_DATA__.props.pageProps.snapshots;
+        } catch(e) {}
+        return null;
+        """
+        
+        raw_snapshots = driver.execute_script(js_extract_script)
         target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
-        for target in target_servers:
-            current_price = "0원"
-            change_status = "0%"
-
-            # [정밀 타격 정규식 규칙]
-            # 형님이 보내주신 원본 소스를 보면 "serverId":"데포로쥬"... "lowestPrice":1490 형태 외에도
-            # 난독화 문자열 사이에 "데포로쥬", "1,490원", "+1.7%" 구조가 1열로 인접하여 배치되어 있습니다.
-            # 서버이름 기준 뒤쪽 500글자를 잘라내어 해당 구역 안에서만 매칭시킵니다 (중복 완전 차단).
-            idx = html_source.find(f'"{target}"')
-            if idx != -1:
-                chunk = html_source[idx:idx+600]
-                
-                # 1. 시세 가격 추출 (난독화된 따옴표나 숫자를 일괄 포착)
-                # lowestPrice 뒤에 붙는 순수 숫자 또는 문자열 형태의 시세값 포착
-                price_match = re.search(r'"lowestPrice"\s*:\s*"?(\d+)"?', chunk)
-                if price_match:
-                    price_num = int(price_match.group(1))
-                    current_price = f"{price_num:,}원"
-                else:
-                    # 백업: 문자열 내에 콤마가 포함된 가격 텍스트가 있을 경우 강제 매칭
-                    text_price_match = re.search(r'([\d,]+원)', chunk)
-                    if text_price_match:
-                        current_price = text_price_match.group(1)
-
-                # 2. 등락률 변동값 추출
-                # deltaPercent 속성값 또는 부호(+, -)가 포함된 독립 백분율 매칭
-                delta_match = re.search(r'"deltaPercent"\s*:\s*"?([-\d.]+)"?', chunk)
-                if delta_match:
-                    delta_val = float(delta_match.group(1))
-                    if delta_val > 0:
-                        change_status = f"+{delta_val}%"
-                    elif delta_val < 0:
-                        change_status = f"{delta_val}%"
-                    else:
-                        change_status = "+0.0%"
-                else:
-                    # 백업: % 기호가 들어간 문자열 추출
-                    text_delta_match = re.search(r'([+-][\d.]+\%)', chunk)
-                    if text_delta_match:
-                        change_status = text_delta_match.group(1)
-
-            # [최종 방어선] 정규식이 완전히 빗나갔을 경우를 대비한 완전 일치 텍스트 크롤링 백업
-            if current_price == "0원":
-                lines = driver.execute_script("return document.documentElement.innerText;").split('\n')
-                for i, line in enumerate(lines):
-                    if line.strip() == target:
-                        for sub in lines[i:i+15]:
-                            if '원' in sub and current_price == "0원" and '평균' not in sub and '최고' not in sub:
-                                current_price = sub.strip()
-                            if '%' in sub and change_status == "0%" and '상승권' not in sub:
-                                change_status = sub.strip()
+        # 성공적으로 객체를 낚아챘다면 JSON 매핑 진행
+        if raw_snapshots and isinstance(raw_snapshots, list):
+            print(f"📦 [엔진 타격 성공] 내부 메모리에서 {len(raw_snapshots)}개의 서버 원본 데이터를 통째로 가로채기 완료했습니다.")
+            for target in target_servers:
+                matched = False
+                for snap in raw_snapshots:
+                    s_name = snap.get('serverName', snap.get('serverId', ''))
+                    if s_name == target:
+                        price_num = snap.get('lowestPrice', 0)
+                        delta_val = snap.get('deltaPercent', 0.0)
+                        
+                        current_price = f"{price_num:,}원" if price_num else "0원"
+                        change_status = f"+{delta_val}%" if delta_val > 0 else f"{delta_val}%"
+                        if delta_val == 0: change_status = "+0.0%"
+                        
+                        prices_data.append({
+                            "source": target,
+                            "price": current_price,
+                            "status": change_status
+                        })
+                        print(f"🎯 [객체 매칭 완벽 성공] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+                        matched = True
                         break
-
-            prices_data.append({
-                "source": target,
-                "price": current_price,
-                "status": change_status
-            })
-            print(f"🎯 [소스 매칭 가로채기 성공] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+        
+        # [최후의 보루: 광역 그물망 스캔] 
+        # 만약 보안 패치로 내부 객체가 안 꺼내진다면, 브라우저 화면의 돔(DOM) 트리를 순회하며 이름 기반 텍스트 크롤링 가동
+        if not prices_data:
+            print("💡 4차 최종 방어선 (글로벌 돔 텍스트 정밀 추적) 가동...")
+            html = driver.page_source
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # 페이지의 모든 텍스트 요소를 조각내어 순서 정렬
+            all_lines = soup.get_text(separator="\n").split('\n')
+            all_lines = [l.strip() for l in all_lines if l.strip()]
+            
+            for target in target_servers:
+                current_price = "0원"
+                change_status = "0%"
+                
+                for i, line in enumerate(all_lines):
+                    if line == target or target in line:
+                        # 이름 매칭 부근 20줄을 확장 스캔하여 엉뚱한 평균/최고가 제외하고 최저가만 필터링
+                        sub_range = all_lines[max(0, i-5):i+20]
+                        for item in sub_range:
+                            if '원' in item and current_price == "0원" and '평균' not in item and '최고' not in item and len(item) < 12:
+                                current_price = item
+                            if '%' in item and change_status == "0%" and '상승권' not in item:
+                                change_status = item
+                        
+                # 겉화면에 등락률 부호가 잘려있다면 전일 대비 글자 정제
+                change_status = change_status.replace('전일 대비', '').strip()
+                prices_data.append({
+                    "source": target,
+                    "price": current_price,
+                    "status": change_status
+                })
+                print(f"🎯 [돔 스캔 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -112,17 +129,19 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 누락(0원) 방지 최종 안전장치
+    # 0원 누락 리스크 방지 최종 세이프티 벨트
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
-        print("\n🚨 [최종 빌드 실패] 데이터 추출 중 0원 누락이 발견되었습니다.")
+        print("\n" + "="*50)
+        print("🚨 [최종 빌드 실패] 개편된 Next.js 스트리밍 돔에서 데이터를 수집하지 못했습니다.")
+        print("="*50 + "\n")
         exit(1)
         
-    # 중복 복사 완전 방어 벨트: 가격이나 상태가 전부 똑같이 카피되었다면 오염 데이터로 인지하고 차단
+    # 데이터 오염(전부 같은 값 복사) 방지 벨트
     if len(new_prices) >= 2:
         all_same_price = all(p['price'] == new_prices[0]['price'] for p in new_prices)
         all_same_status = all(p['status'] == new_prices[0]['status'] for p in new_prices)
         if all_same_price or all_same_status:
-            print("\n🚨 [위험 감지] 서버 간 데이터 중복 복사 징후가 포착되어 빌드를 안전하게 다운시킵니다.")
+            print("\n🚨 [위험 감지] 서버 간 데이터 중복 복사 버그가 감지되어 빌드를 정지합니다.")
             exit(1)
 
     kst = timezone(timedelta(hours=9))
@@ -132,7 +151,7 @@ def update_json():
 
     with open('market_stats.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-    print(f"✅ 한국 시간 기준 업데이트 완료: {current_time}")
+    print(f"✅ 한국 시간 기준 리니지 마켓 시세 업데이트 완료: {current_time}")
 
 if __name__ == "__main__":
     update_json()

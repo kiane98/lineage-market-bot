@@ -1,12 +1,12 @@
 import os
 import json
 import time
-import re
 from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
 
 def get_lineage_prices():
     chrome_options = Options()
@@ -33,70 +33,58 @@ def get_lineage_prices():
     try:
         url = "https://enchant-lab.com/market"
         driver.get(url)
-        time.sleep(15) # 스크립트 데이터 로딩 완전 대기
+        
+        # 리액트/Next.js의 복잡한 카드 렌더링이 완전히 끝날 때까지 25초로 대기 상향
+        time.sleep(25) 
 
         print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
 
-        # [치트키 로직] 화면 레이아웃 무시하고, Next.js 자바스크립트가 소스코드에 심어놓은 원본 텍스트 데이터 추출
-        html_source = driver.page_source
-        
+        # 렌더링이 완료된 브라우저의 전체 소스를 BeautifulSoup에 주입
+        html = driver.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+
         target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
+        # 페이지 내부의 모든 텍스트 요소를 수집하기 위해 본문 전체를 줄바꿈 단위로 완전 해체
+        all_lines = soup.get_text(separator="\n").split('\n')
+        all_lines = [l.strip() for l in all_lines if l.strip()]
+
+        print(f"📄 [디버깅] 현재 메모리에 로드된 전체 텍스트 라인 수: {len(all_lines)}개")
+
+        # [그물망 탐색 로직]
+        # 서버 이름을 발견하면, 그 바로 아래 줄(인접한 15줄 이내)에 무조건 시세('원')와 등락률('%')이 순서대로 나옵니다.
         for target in target_servers:
             current_price = "0원"
             change_status = "0%"
+            
+            for i, line in enumerate(all_lines):
+                if line == target:
+                    # 서버 이름을 찾았다면 그 주변 최대 15줄을 샅샅이 뒤집니다.
+                    search_range = all_lines[i:i+16]
+                    
+                    for item in search_range:
+                        if '원' in item and current_price == "0원":
+                            current_price = item
+                        elif '%' in item and change_status == "0%":
+                            change_status = item
+                    
+                    # 원하는 데이터를 다 찾았다면 루프 조기 종료
+                    if current_price != "0원" and change_status != "0%":
+                        break
 
-            # 1단계: 소스코드 텍스트 내부에서 정규식으로 서버의 원본 시세 스냅샷 데이터 강제 추출
-            # 예: {"serverId":"데포로쥬","serverName":"데포로쥬","lowestPrice":1490 ... "deltaPercent":1.7}
-            pattern = rf'"{target}"[^}}]+'
-            match = re.search(pattern, html_source)
-
-            if match:
-                chunk = match.group(0)
-                
-                # 최저가(lowestPrice) 숫자 추출
-                price_match = re.search(r'"lowestPrice":\s*(\d+)', chunk)
-                if price_match:
-                    price_num = int(price_match.group(1))
-                    current_price = f"{price_num:,}원"
-
-                # 등락률(deltaPercent) 숫자 추출 및 부호 복원
-                delta_match = re.search(r'"deltaPercent":\s*([-\d.]+)', chunk)
-                if delta_match:
-                    delta_val = float(delta_match.group(1))
-                    if delta_val > 0:
-                        change_status = f"+{delta_val}%"
-                    elif delta_val < 0:
-                        change_status = f"{delta_val}%"
-                    else:
-                        change_status = "+0.0%"
-
-            # 2단계 방어선: 만약 정규식 매칭 실패 시 브라우저 내 인접 엘리먼트 텍스트 강제 수집
+            # 2차 방어선: 만약 정확히 매칭이 안 풀렸다면 문맥 검색 적용
             if current_price == "0원":
-                try:
-                    find_fallback = f"""
-                    const elements = Array.from(document.querySelectorAll('*'));
-                    const targetEl = elements.find(el => el.innerText === '{target}');
-                    if(targetEl) {{
-                        return targetEl.closest('a')?.innerText || targetEl.parentElement?.innerText || '';
-                    }}
-                    return '';
-                    """
-                    fallback_text = driver.execute_script(find_fallback)
-                    if fallback_text:
-                        lines = [l.strip() for l in fallback_text.split('\n') if l.strip()]
-                        for line in lines:
-                            if '원' in line and current_price == "0원": current_price = line
-                            if '%' in line: change_status = line
-                except Exception:
-                    pass
+                for line in all_lines:
+                    if target in line and '원' in line:
+                        # 한 줄에 서버이름과 가격이 같이 박힌 데이터 레이아웃 방어
+                        current_price = line.replace(target, '').strip()
 
             prices_data.append({
                 "source": target,
                 "price": current_price,
                 "status": change_status
             })
-            print(f"🎯 [백엔드 원본 타격] {target} | 가격: {current_price} | 상태: {change_status}")
+            print(f"🎯 [최종 매칭 결과] {target} | 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -108,10 +96,11 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 5개 서버 데이터가 모두 정상적으로 ('0원' 없이) 수집되었는지 최종 검증
+    # 가격이 '0원'으로 유실된 게 하나라도 있으면 구동 정지 및 알림 유도
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
         print("\n" + "="*50)
-        print("🚨 [최종 빌드 실패] 일부 타겟 서버 데이터 수집이 유실되었습니다. 위 로그를 확인하세요.")
+        print("🚨 [최종 빌드 실패] 개편된 텍스트 풀 구조에서 가격 추출에 실패했습니다.")
+        print("💡 해결 팁: 위 로그에서 매칭 결과를 확인하고 로딩 대기 시간을 더 늘리거나 보정해야 합니다.")
         print("="*50 + "\n")
         exit(1)
 

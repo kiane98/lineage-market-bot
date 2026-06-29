@@ -37,12 +37,10 @@ def get_lineage_prices():
         url = "https://enchant-lab.com/market"
         driver.get(url)
         
-        # 기본 컴포넌트 로딩 대기 (최대 20초)
         wait = WebDriverWait(driver, 20)
-        
-        # 캡처본에 보이는 상단 서버 정렬 탭 버튼 영역이 뜰 때까지 대기
-        wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '서버 정렬')]")))
-        time.sleep(3)
+        # 상단 서버 목록 레이아웃이 로딩될 때까지 안전하게 대기
+        wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '서버')]")))
+        time.sleep(5) 
 
         target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
@@ -51,70 +49,72 @@ def get_lineage_prices():
             change_status = "0%"
             
             try:
-                print(f"🎯 [{target}] 서버 데이터 수집 시도 중...")
+                print(f"🔄 [{target}] 버튼 탐색 및 클릭 시도...")
                 
-                # 1단계: 캡처본 상단에 나열된 수많은 서버 버튼 중 해당 서버이름 버튼 정밀 매칭
-                # 태그가 button이든 div이든 텍스트가 정확히 일치하는 요소를 찾아 클릭합니다.
+                # 형님 말씀대로 글씨를 정확히 알아보고 조준하는 XPATH 규칙입니다.
                 button_xpath = f"//button[text()='{target}'] | //div[text()='{target}'] | //span[text()='{target}']"
                 server_btn = wait.until(EC.element_to_be_clickable((By.XPATH, button_xpath)))
                 
-                # 안전한 자바스크립트 클릭 이벤트 주입
+                # 확실하게 클릭 조작 수행
                 driver.execute_script("arguments[0].click();", server_btn)
-                time.sleep(3.5) # 클릭 후 하단에 최저가, 최고가 카드 UI판이 갱신되는 시간 충분히 확보
+                
+                # [핵심 보정] 리액트 화면이 완전히 새 서버 시세판으로 리렌더링될 때까지 4.5초 정지 대기 (지연 방어)
+                time.sleep(4.5) 
 
-                # 2단계: 클릭 후 활성화된 하단 영역의 소스코드 파싱
+                # 클릭 후 새롭게 동적 반영된 겉화면 텍스트만 추출
                 html = driver.page_source
                 soup = BeautifulSoup(html, 'html.parser')
 
-                # 캡처화면에 크게 나타난 대형 타이틀 구역(예: 발라카스 -9.2%) 추적
-                # 서버 이름 바로 옆에 붙어있는 등락률(badge 또는 span)을 정확히 조준합니다.
-                main_title_zone = soup.find(lambda tag: tag.name in ['h3', 'h2', 'p'] and target in tag.get_text())
+                # [핀포인트 추출 구역 설정]
+                # 화면에서 엉뚱하게 다른 서버 시세를 긁지 않도록, 클릭된 서버 이름이 박혀있는 대형 시세 대시보드 구역만 격리 타격합니다.
+                main_zone = soup.find(lambda tag: tag.name in ['h2', 'h3', 'div'] and target in tag.get_text() and ('원' in tag.parent.get_text() or '%' in tag.parent.get_text()))
                 
-                if main_title_zone:
-                    # 해당 타이틀 블록을 포함한 하단 시세 요약 카드 박스 전체 텍스트 수집
-                    parent_box = main_title_zone.find_parent(lambda tag: tag.name in ['div', 'section'])
-                    if not parent_box:
-                        parent_box = main_title_zone.parent.parent
-                        
-                    box_texts = parent_box.get_text(separator="\n").split('\n')
-                    box_texts = [b.strip() for b in box_texts if b.strip()]
+                if not main_zone:
+                    # 백업용 광역 검색
+                    main_zone = soup.find(lambda tag: tag.name in ['h1', 'h2', 'h3', 'p'] and target in tag.get_text())
+
+                if main_zone:
+                    # 해당 서버 데이터가 노출되는 카드 박스 부모 엘리먼트 획득
+                    box_container = main_zone.parent.parent if main_zone.parent else main_zone
+                    box_text = box_container.get_text(separator="\n").split('\n')
+                    box_text = [b.strip() for b in box_text if b.strip()]
                     
-                    print(f"🔍 [{target}] 활성화 구역 내부 텍스트 스캔: {box_texts}")
+                    print(f"📊 [{target}] 활성화 카드 실시간 텍스트 데이터 블록: {box_text}")
 
-                    # 카드 안에서 '최저가' 글자 바로 다음에 나오는 가격 노출 데이터 가로채기
-                    for idx, txt in enumerate(box_texts):
-                        if '최저가' in txt and idx + 1 < len(box_texts):
-                            next_txt = box_texts[idx+1]
-                            if '원' in next_txt:
-                                current_price = next_txt
+                    # 카드 안에서 '최저가' 글자 바로 옆 라인이나 텍스트를 검증해서 시세 추출
+                    for idx, text_item in enumerate(box_text):
+                        if '최저가' in text_item and idx + 1 < len(box_text):
+                            if '원' in box_text[idx+1]:
+                                current_price = box_text[idx+1]
                         
-                        # % 등락률 데이터 가로채기
-                        if '%' in txt and change_status == "0%":
-                            change_status = txt
+                        if '원' in text_item and current_price == "0원" and len(text_item) < 12:
+                            current_price = text_item
+                            
+                        if '%' in text_item and change_status == "0%":
+                            change_status = text_item
 
-                # 3단계 백업: 만약 특정 카드 지정이 꼬였다면 본문 인접 줄바꿈 텍스트에서 강제 선별
+                # 만약 박스 특정 추출이 실패했다면 최후방 텍스트 인접 서치 가동
                 if current_price == "0원":
                     all_lines = soup.get_text(separator="\n").split('\n')
                     all_lines = [l.strip() for l in all_lines if l.strip()]
                     for i, line in enumerate(all_lines):
                         if line == target:
-                            # 이름 발견 후 아래 10줄 스캔
-                            for sub_line in all_lines[i:i+11]:
-                                if '원' in sub_line and current_price == "0원" and len(sub_line) < 12:
-                                    current_price = sub_line
-                                if '%' in sub_line and change_status == "0%":
-                                    change_status = sub_line
+                            for sub in all_lines[i:i+12]:
+                                if '원' in sub and current_price == "0원" and len(sub) < 12:
+                                    current_price = sub
+                                if '%' in sub and change_status == "0%":
+                                    change_status = sub
                             break
 
             except Exception as item_err:
-                print(f"⚠️ {target} 서버 클릭 제어 중 부분 렉/에러 발생: {item_err}")
+                print(f"⚠️ {target} 서버 클릭 제어 실패 또는 타임아웃: {item_err}")
 
             prices_data.append({
                 "source": target,
                 "price": current_price,
                 "status": change_status
             })
-            print(f"📢 [최종 매칭 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+            print(f"📢 [추출 마감 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -126,15 +126,16 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 중복 복사 및 0원 유실 방지 최종 검증 장치
+    # 0원 유실 방지 최종 스토퍼
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
         print("\n" + "="*50)
-        print("🚨 [최종 빌드 실패] 서버 정렬 탭 선택 후 화면 데이터 추출에 실패했습니다.")
+        print("🚨 [최종 빌드 실패] 갱신된 화면 텍스트 타겟팅에서 누락이 발견되었습니다.")
         print("="*50 + "\n")
         exit(1)
         
+    # 복사 에러 최종 스토퍼: 모든 서버 시세가 하나로 복사되었다면 데이터 오염으로 판단하고 빌드를 정지시킵니다.
     if len(new_prices) >= 2 and all(p['price'] == new_prices[0]['price'] for p in new_prices):
-        print("\n🚨 [위험 감지] 모든 서버의 시세가 갱신되지 못하고 중복 복사되었습니다.")
+        print("\n🚨 [위험 감지] 서버 시세가 리렌더링되지 못하고 동일 금액으로 중복 수집되었습니다.")
         exit(1)
 
     kst = timezone(timedelta(hours=9))
@@ -144,7 +145,7 @@ def update_json():
 
     with open('market_stats.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-    print(f"✅ 한국 시간 기준 업데이트 완료: {current_time}")
+    print(f"✅ 한국 시간 기준 시세 업데이트 완료: {current_time}")
 
 if __name__ == "__main__":
     update_json()

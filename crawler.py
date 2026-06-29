@@ -37,7 +37,6 @@ def get_lineage_prices():
         driver.get(url)
         
         wait = WebDriverWait(driver, 25)
-        # 기본 페이지 골격 안착 대기
         wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
         time.sleep(8) 
 
@@ -50,14 +49,15 @@ def get_lineage_prices():
             change_status = "0%"
             
             try:
-                print(f"🔄 [{target}] 자바스크립트 엔진으로 버튼 추적 및 강제 클릭 트리거...")
+                print(f"🔄 [{target}] 버튼 엘리먼트 자바스크립트 강제 클릭 시도...")
                 
-                # [마스터 치트키] 
-                # 화면 좌표나 가려짐 문제 없이, 돔(DOM) 트리에 존재하는 28개 단추 중 텍스트가 정확히 서버명과 일치하는 요소를 
-                # 브라우저 자바스크립트 명령으로 직접 찾아서 즉시 물리 클릭시킵니다.
+                # 자바스크립트 오타(.strip()) 완벽 수정 및 트림 처리 안전 보강
                 js_click_cmd = f"""
                 const elements = Array.from(document.querySelectorAll('button, div, span, a'));
-                const targetBtn = elements.find(el => el.innerText.strip ? el.innerText.strip() === '{target}' : el.innerText === '{target}');
+                const targetBtn = elements.find(el => {{
+                    const txt = el.innerText ? el.innerText.trim() : '';
+                    return txt === '{target}';
+                }});
                 if (targetBtn) {{
                     targetBtn.click();
                     return true;
@@ -67,45 +67,44 @@ def get_lineage_prices():
                 
                 click_success = driver.execute_script(js_click_cmd)
                 if not click_success:
-                    print(f"⚠️ [{target}] 자바스크립트 매칭 버튼을 못 찾아서 일반 XPATH로 2차 시도합니다.")
+                    print(f"⚠️ [{target}] JS 클릭 실패, 기본 XPATH로 2차 클릭 시도...")
                     button_xpath = f"//button[text()='{target}'] | //div[text()='{target}'] | //span[text()='{target}']"
                     server_btn = driver.find_element(By.XPATH, button_xpath)
                     driver.execute_script("arguments[0].click();", server_btn)
 
-                # 클릭 후 하단 메인 대시보드 시세 컴포넌트가 완전히 새 서버 데이터로 리렌더링될 때까지 5초 확실히 고정 대기
+                # 클릭 후 대시보드가 새 서버 데이터로 리렌더링될 때까지 충분히 대기
                 time.sleep(5.0)
 
-                # 2단계: 갱신이 완료된 순간의 화면 전체 정적 텍스트 덤프 획득
+                # 데이터가 바뀐 순간의 텍스트 덤프 획득
                 body_text = driver.find_element(By.TAG_NAME, "body").text
                 lines = [l.strip() for l in body_text.split('\n') if l.strip()]
 
-                # 3단계: 화면 텍스트 내에서 '최저가' 구역 정밀 조준 파싱
+                # 화면 텍스트 내에서 해당 서버 이름 주위 정밀 스캔 (스캔 영역 하단으로 대폭 확장)
                 for i, line in enumerate(lines):
-                    # 메인 뷰어 영역에 표시된 서버 이름 타이틀 포착
                     if line == target or target in line:
-                        scan_zone = lines[max(0, i-2):i+20]
+                        scan_zone = lines[max(0, i-4):i+30]
                         
                         for item in scan_zone:
-                            # 1. 최저가 추출 ('평균'이나 '최고' 텍스트를 엄격하게 패스하여 오차 방지)
+                            # 1. 최저가 추출 ('평균', '최고' 단어 제외)
                             if '원' in item and current_price == "0원":
                                 if '평균' not in item and '최고' not in item and len(item) < 12:
                                     current_price = item
                             
-                            # 2. 등락률 변동치 추출 ('상승권' 등 안내 가이드 텍스트 필터링)
+                            # 2. 등락률 변동치 추출 ('상승권' 안내 텍스트 제외)
                             if '%' in item and change_status == "0%":
                                 if '상승권' not in item and len(item) < 10:
                                     change_status = item.replace('전일 대비', '').strip()
                         break
 
             except Exception as item_err:
-                print(f"⚠️ {target} 서버 돔 추적 중 부분 예외 발생: {item_err}")
+                print(f"⚠️ {target} 서버 수집 중 부분 예외 발생: {item_err}")
 
             prices_data.append({
                 "source": target,
                 "price": current_price,
                 "status": change_status
             })
-            print(f"📢 [최종 결과 확정] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+            print(f"📢 [결과 기록] {target} ➔ 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -117,19 +116,19 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 0원 유실 방지 최종 안전장치
+    # 0원 누락 리스크 방지 안전장치
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
         print("\n" + "="*50)
-        print("🚨 [최종 빌드 실패] 자바스크립트 탭 액션 매칭에서 일부 시세(0원)가 복구되지 못했습니다.")
+        print("🚨 [빌드 실패] 일부 서버 시세(0원)가 정상적으로 수집되지 못했습니다.")
         print("="*50 + "\n")
         exit(1)
         
-    # 데이터 오염(전부 같은 값으로 복사됨) 방지 차단 장치
+    # 데이터 오염(전부 같은 값 복사됨) 방지 차단 장치
     if len(new_prices) >= 2:
         all_same_price = all(p['price'] == new_prices[0]['price'] for p in new_prices)
         all_same_status = all(p['status'] == new_prices[0]['status'] for p in new_prices)
         if all_same_price or all_same_status:
-            print("\n🚨 [위험 감지] 서버 간 데이터 중복 복사 현상이 발견되어 빌드를 정지합니다.")
+            print("\n🚨 [위험 감지] 서버 간 데이터 중복 복사 현상이 발견되어 빌드를 홀딩합니다.")
             exit(1)
 
     kst = timezone(timedelta(hours=9))
@@ -139,7 +138,7 @@ def update_json():
 
     with open('market_stats.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-    print(f"✅ 한국 시간 기준 리니지 마켓 시세 업데이트 완료: {current_time}")
+    print(f"✅ 리니지 마켓 시세 업데이트 완료: {current_time}")
 
 if __name__ == "__main__":
     update_json()

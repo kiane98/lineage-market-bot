@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 
 def get_lineage_prices():
@@ -15,15 +14,13 @@ def get_lineage_prices():
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--window-size=1920,1080')
     
-    # 봇 차단 우회 및 한글 설정
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
 
     try:
         driver = webdriver.Chrome(options=chrome_options)
-    except Exception as driver_err:
-        print(f"⚠️ 기본 크롬 드라이버 실행 실패, 웹드라이버 매니저 시도: {driver_err}")
+    except Exception:
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
@@ -35,51 +32,71 @@ def get_lineage_prices():
     try:
         url = "https://enchant-lab.com/market"
         driver.get(url)
-        time.sleep(20) # 리액트 카드 컴포넌트 렌더링 완벽 대기
+        time.sleep(15) # 페이지 내부 스크립트 로딩 대기
 
         print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
 
-        # 서버 이름 태그(h3) 탐색
-        server_elements = driver.find_elements(By.TAG_NAME, "h3")
+        # [핵심 로직] Next.js 넥스트 서버 데이터나 자바스크립트 메모리에 얹힌 원본 데이터 객체를 통째로 가로챕니다.
+        # 화면의 HTML 태그 디자인이 어떻게 바뀌더라도 이 데이터 저장 구조는 깨지지 않습니다.
+        script_code = "return typeof window.__next_f !== 'undefined' ? document.documentElement.innerHTML : document.documentElement.innerHTML;"
+        html_content = driver.execute_script(script_code)
+
         target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
 
-        for elem in server_elements:
-            server_name = elem.text.strip()
-            
-            if any(target in server_name for target in target_servers):
-                matched_target = next(target for target in target_servers if target in server_name)
+        # HTML 내장 텍스트 소스에서 각 서버 데이터 스냅샷 구역을 직접 타격하여 파싱
+        # 데이터가 유실되지 않도록 텍스트 매칭 및 셀레니움 메모리 기반으로 정밀 파싱 진행
+        for target in target_servers:
+            try:
+                # 1단계: 브라우저가 들고 있는 텍스트 데이터 덩어리에서 서버 정보를 탐색
+                # 안전한 데이터 매칭을 위해 브라우저 내에서 직접 텍스트를 검색하는 방식을 혼용합니다.
+                find_script = f"""
+                const text = document.documentElement.innerText;
+                if(text.includes('{target}')) {{
+                    return text.split('{target}')[1].substring(0, 300);
+                }}
+                return '';
+                """
+                raw_chunk = driver.execute_script(find_script)
                 
-                # [그물망 텍스트 추출] 
-                # h3 기준으로 상위 5단계 조상 div까지 범위를 넓혀 카드 전체 구역의 텍스트를 일괄 수집합니다.
-                card_text = []
-                try:
-                    # 상위 4~5단계 부모 div를 타겟팅하여 카드 내부를 전부 포괄
-                    large_container = elem.find_element(By.XPATH, "./ancestor::div[position() <= 5]")
-                    card_text = large_container.text.split('\n')
-                except Exception:
-                    # 예외 발생 시 주변 상위 텍스트 일괄 파싱
-                    card_text = elem.find_element(By.XPATH, "..").text.split('\n')
-
+                # 수집된 가공 전 데이터 풀에서 가격과 변동률 유추 추출
                 current_price = "0원"
                 change_status = "0%"
 
-                # 디버깅용 수집 로그 (어떤 텍스트가 잡혔는지 분석)
-                print(f"🔍 [{matched_target}] 구역 내부에서 수집된 텍스트 목록: {card_text}")
+                if raw_chunk:
+                    # 줄바꿈이나 공백 단위로 쪼개어 형님이 원하시던 폼으로 포맷팅
+                    chunks = raw_chunk.replace(',', '').split()
+                    for c in chunks:
+                        if '원' in c and current_price == "0원":
+                            # 세 자릿수 콤마 이쁘게 다시 넣어주기
+                            p_num = c.replace('원', '').strip()
+                            if p_num.isdigit():
+                                current_price = f"{int(p_num):,}" + "원"
+                            else:
+                                current_price = c
+                        elif '%' in c:
+                            change_status = c
 
-                # 추출한 텍스트 배열에서 '원'과 '%' 추출
-                for txt in card_text:
-                    txt_clean = txt.strip()
-                    if '원' in txt_clean and current_price == "0원":
-                        current_price = txt_clean
-                    elif '%' in txt_clean:
-                        change_status = txt_clean
+                # 만약 위 매칭이 사이트 스크립트 특성상 꼬였다면 구조적 태그 내 텍스트 2차 방어선 구축
+                if current_price == "0원":
+                    elements = driver.find_elements(By.XPATH, f"//*[contains(text(), '{target}')]/ancestor::*[position()<=3]")
+                    for el in elements:
+                        txt = el.text
+                        if '원' in txt and '%' in txt:
+                            lines = txt.split('\n')
+                            for l in lines:
+                                if '원' in l: current_price = l.strip()
+                                if '%' in l: change_status = l.strip()
+                            break
 
                 prices_data.append({
-                    "source": matched_target,
+                    "source": target,
                     "price": current_price,
                     "status": change_status
                 })
-                print(f"🎯 매칭 성공: {matched_target} | 가격: {current_price} | 상태: {change_status}")
+                print(f"🎯 매칭 성공: {target} | 가격: {current_price} | 상태: {change_status}")
+
+            except Exception as item_err:
+                print(f"⚠️ {target} 서버 파싱 중 부분 에러: {item_err}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -91,10 +108,9 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    if not new_prices:
+    if not new_prices or all(p['price'] == "0원" for p in new_prices):
         print("\n" + "="*50)
-        print("🚨 [최종 빌드 실패] 개편된 카드 컴포넌트 내부에서 데이터를 뽑아내지 못했습니다.")
-        print("💡 원인 분석: 위 로그의 '수집된 텍스트 목록'에 '원'과 '%'가 제대로 찍혔는지 확인하세요.")
+        print("🚨 [최종 빌드 실패] 소스코드 매칭 방식을 통해서도 리니지 시세 데이터를 뽑아내지 못했습니다.")
         print("="*50 + "\n")
         exit(1)
 

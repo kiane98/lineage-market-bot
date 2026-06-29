@@ -5,9 +5,6 @@ from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
@@ -36,51 +33,81 @@ def get_lineage_prices():
     try:
         url = "https://enchant-lab.com/market"
         driver.get(url)
-        
-        # 기본 페이지 로딩 대기
-        wait = WebDriverWait(driver, 15)
-        
-        target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
+        time.sleep(15) # Next.js 내부 데이터 스크립트 적재 대기
 
-        for target in target_servers:
-            current_price = "0원"
-            change_status = "0%"
-            
+        print(f"🌐 [체크] 현재 접속된 페이지 제목: '{driver.title}'")
+
+        # 1단계: Next.js 프레임워크가 숨겨놓은 마스터 데이터 스크립트 태그 타격
+        html = driver.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+        next_data_script = soup.find('script', id='__NEXT_DATA__')
+
+        # 2단계: 만약 해당 태그가 있다면 통째로 JSON 파싱 (가장 깨끗한 정석 방식)
+        if next_data_script:
             try:
-                # 1단계: 스크린샷 상단에 배치된 서버 버튼(텍스트 매칭)을 찾아 강제 클릭
-                # 버튼 내 공백이 있을 수 있으므로 contains 구문으로 유연하게 타격합니다.
-                button_xpath = f"//button[contains(text(), '{target}')] | //div[contains(text(), '{target}')]"
-                server_btn = wait.until(EC.element_to_be_clickable((By.XPATH, button_xpath)))
+                json_data = json.loads(next_data_script.string)
+                # Next.js 내부 구조를 타고 들어가서 28개 서버 스냅샷 데이터 배열 확보
+                # 일반적인 Next.js의 pageProps 내부에서 marketData나 snapshots 위치를 추적합니다.
+                props = json_data.get('props', {}).get('pageProps', {})
                 
-                # 자바스크립트를 이용해 정확하고 안전하게 클릭 이벤트를 발생시킵니다.
-                driver.execute_script("arguments[0].click();", server_btn)
-                time.sleep(2.5) # 버튼 클릭 후 아래쪽 시세 카드판이 갱신되는 시간 대기
+                # 데이터 통이 묶여있는 키값 유연하게 탐색
+                market_data = props.get('marketData', props.get('initialState', {}).get('market', {}))
+                snapshots = market_data.get('snapshots', [])
+                
+                if snapshots:
+                    target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
+                    for target in target_servers:
+                        for snap in snapshots:
+                            if snap.get('serverName') == target or snap.get('serverId') == target:
+                                price_num = snap.get('lowestPrice', 0)
+                                delta_val = snap.get('deltaPercent', 0.0)
+                                
+                                current_price = f"{price_num:,}원" if price_num else "0원"
+                                change_status = f"+{delta_val}%" if delta_val > 0 else f"{delta_val}%"
+                                if delta_val == 0: change_status = "+0.0%"
+                                
+                                prices_data.append({
+                                    "source": target,
+                                    "price": current_price,
+                                    "status": change_status
+                                })
+                                print(f"🎯 [마스터 JSON 파싱 성공] {target} | 가격: {current_price} | 상태: {change_status}")
+                                break
+            except Exception as json_err:
+                print(f"⚠️ JSON 구조 파싱 지연/실패: {json_err}")
 
-                # 2단계: 클릭 후 갱신된 화면의 HTML 소스를 긁어 BeautifulSoup으로 분석
-                html = driver.page_source
-                soup = BeautifulSoup(html, 'html.parser')
-
-                # 화면 전체 텍스트에서 '원'과 '%' 추출
-                all_text = soup.get_text(separator="\n").split('\n')
-                all_text = [t.strip() for t in all_text if t.strip()]
-
-                # 스크린샷 구조상 클릭된 서버의 정보는 메인 대형 뷰어 영역에 배치됩니다.
-                # 해당 텍스트 데이터 뭉치 안에서 알맞은 가격과 변동률을 찾아냅니다.
-                for item in all_text:
-                    if '원' in item and current_price == "0원" and len(item) < 15:
-                        current_price = item
-                    if '%' in item and change_status == "0%" and ('+' in item or '-' in item or '0' in item):
-                        change_status = item
-
-            except Exception as click_err:
-                print(f"⚠️ {target} 서버 버튼 클릭 또는 파싱 중 에러 발생: {click_err}")
-
-            prices_data.append({
-                "source": target,
-                "price": current_price,
-                "status": change_status
-            })
-            print(f"🎯 [화면 클릭 타격 성공] {target} | 가격: {current_price} | 상태: {change_status}")
+        # 3단계 [완벽 방어망]: 2단계가 막혔을 때를 대비해, 문자열 소스 전체에서 타겟 서버 텍스트 강제 슬라이싱 파싱
+        if not prices_data:
+            print("💡 3단계 텍스트 가로채기 방어선 가동...")
+            page_text = driver.page_source
+            target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
+            
+            for target in target_servers:
+                current_price = "0원"
+                change_status = "0%"
+                
+                # 서버명 뒤에 붙는 객체 구역을 잘라내어 가격과 등락률을 1:1 독립 매칭
+                import re
+                idx = page_text.find(f'"{target}"')
+                if idx != -1:
+                    chunk = page_text[idx:idx+300] # 서버명 기준 뒤쪽 300자만 안전하게 격리
+                    
+                    price_match = re.search(r'"lowestPrice"\s*:\s*(\d+)', chunk)
+                    if price_match:
+                        current_price = f"{int(price_match.group(1)):,}원"
+                        
+                    delta_match = re.search(r'"deltaPercent"\s*:\s*([-\d.]+)', chunk)
+                    if delta_match:
+                        dv = float(delta_match.group(1))
+                        change_status = f"+{dv}%" if dv > 0 else f"{dv}%"
+                        if dv == 0: change_status = "+0.0%"
+                
+                prices_data.append({
+                    "source": target,
+                    "price": current_price,
+                    "status": change_status
+                })
+                print(f"🎯 [텍스트 격리 분리 성공] {target} | 가격: {current_price} | 상태: {change_status}")
 
     except Exception as e:
         print(f"❌ 크롤링 내부 에러 발생: {e}")
@@ -92,11 +119,15 @@ def get_lineage_prices():
 def update_json():
     new_prices = get_lineage_prices()
     
-    # 5개 타겟 서버 중 단 하나라도 가격 수집이 누락(0원)되면 안전하게 빌드를 정지시킵니다.
+    # 중복 복사 방지용 추가 검증 장치: 가격이나 상태가 전부 똑같다면 빌드를 실패시켜 안전하게 홀딩
+    if new_prices and len(new_prices) >= 2:
+        all_same_price = all(p['price'] == new_prices[0]['price'] for p in new_prices)
+        if all_same_price and new_prices[0]['price'] != "0원":
+            print("\n🚨 [위험 감지] 모든 서버의 시세가 동일하게 중복 복사되었습니다. 빌드를 중단합니다.")
+            exit(1)
+            
     if not new_prices or any(p['price'] == "0원" for p in new_prices):
-        print("\n" + "="*50)
-        print("🚨 [최종 빌드 실패] 서버 클릭 후 가격 데이터를 받아오지 못했습니다. 버튼 바인딩 확인이 필요합니다.")
-        print("="*50 + "\n")
+        print("\n🚨 [최종 빌드 실패] 일부 서버의 시세가 0원으로 누락되었습니다.")
         exit(1)
 
     kst = timezone(timedelta(hours=9))

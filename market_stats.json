@@ -1,5 +1,5 @@
 {
-    "last_updated": "2026-07-03 19:50",
+    "last_updated": "2026-07-04 06:32",
     "prices": [
         {
             "source": "데포로쥬",
@@ -18,13 +18,13 @@
         },
         {
             "source": "데컨",
-            "price": "780원",
-            "status": "+2.6%"
+            "price": "783원",
+            "status": "+3.0%"
         },
         {
             "source": "듀크데필",
-            "price": "781원",
-            "status": "-5.9%"
+            "price": "820원",
+            "status": "-1.2%"
         }
     ]
 }

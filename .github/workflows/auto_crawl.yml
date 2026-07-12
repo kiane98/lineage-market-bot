@@ -3,15 +3,11 @@ name: Lineage Market Auto Crawler
 on:
   schedule:
     # 한국 시간 기준 오전 05:15, 오후 17:15 실행
-    # UTC 기준: 20:15 (전날), 08:15
     - cron: '15 8,20 * * *'
   workflow_dispatch:
   push:
     branches:
       - main
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -31,8 +27,6 @@ jobs:
       - name: Install dependencies
         run: |
           pip install selenium webdriver-manager beautifulsoup4
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
 
       - name: Run Crawler
         run: python crawler.py
@@ -42,9 +36,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
+          # 파일이 없어서 에러 나는 것을 방지하기 위해 빈 파일이라도 터치
+          touch market_stats.json
           git add market_stats.json
           
-          # 한국 시간(KST)으로 커밋 메시지 작성
+          # 변경사항이 없을 때(exit code 1) 빌드가 멈추지 않도록 조치
           git commit -m "Auto Update: $(TZ='Asia/Seoul' date +'%Y-%m-%d %H:%M') KST" || exit 0
           
-          git push origin main --force
+          git push origin main

@@ -36,11 +36,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 파일이 없어서 에러 나는 것을 방지하기 위해 빈 파일이라도 터치
           touch market_stats.json
           git add market_stats.json
           
-          # 변경사항이 없을 때(exit code 1) 빌드가 멈추지 않도록 조치
+          # 변경사항이 없을 때 빌드가 멈추지 않도록 예외 처리
           git commit -m "Auto Update: $(TZ='Asia/Seoul' date +'%Y-%m-%d %H:%M') KST" || exit 0
           
           git push origin main

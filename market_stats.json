@@ -1,9 +1,9 @@
 {
-    "last_updated": "2026-08-17 05:38",
+    "last_updated": "2026-08-17 18:00",
     "prices": [
         {
             "source": "데포로쥬",
-            "price": "826원",
+            "price": "800원",
             "status": "0%"
         },
         {
@@ -13,17 +13,17 @@
         },
         {
             "source": "에바",
-            "price": "917원",
+            "price": "882원",
             "status": "0%"
         },
         {
             "source": "데컨",
-            "price": "745원",
+            "price": "720원",
             "status": "0%"
         },
         {
             "source": "듀크데필",
-            "price": "720원",
+            "price": "706원",
             "status": "0%"
         }
     ]

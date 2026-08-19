@@ -1,29 +1,29 @@
 {
-    "last_updated": "2026-08-19 08:59",
+    "last_updated": "2026-08-19 09:17",
     "prices": [
+        {
+            "source": "파아그리오",
+            "price": "1,050원",
+            "status": "0%"
+        },
+        {
+            "source": "안타라스",
+            "price": "1,850원",
+            "status": "0%"
+        },
+        {
+            "source": "글루디오",
+            "price": "1,147원",
+            "status": "0%"
+        },
+        {
+            "source": "군터",
+            "price": "700원",
+            "status": "0%"
+        },
         {
             "source": "데포로쥬",
             "price": "700원",
-            "status": "0%"
-        },
-        {
-            "source": "켄라우헬",
-            "price": "697원",
-            "status": "0%"
-        },
-        {
-            "source": "에바",
-            "price": "897원",
-            "status": "0%"
-        },
-        {
-            "source": "데컨",
-            "price": "700원",
-            "status": "0%"
-        },
-        {
-            "source": "듀크데필",
-            "price": "710원",
             "status": "0%"
         }
     ]

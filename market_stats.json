@@ -1,14 +1,14 @@
 {
-    "last_updated": "2026-08-19 09:17",
+    "last_updated": "2026-08-19 17:54",
     "prices": [
         {
             "source": "파아그리오",
-            "price": "1,050원",
+            "price": "1,000원",
             "status": "0%"
         },
         {
             "source": "안타라스",
-            "price": "1,850원",
+            "price": "1,833원",
             "status": "0%"
         },
         {
@@ -18,7 +18,7 @@
         },
         {
             "source": "군터",
-            "price": "700원",
+            "price": "650원",
             "status": "0%"
         },
         {

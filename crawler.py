@@ -34,7 +34,7 @@ def get_lineage_prices():
     })
 
     prices_data = []
-    target_servers = ["데포로쥬", "켄라우헬", "에바", "데컨", "듀크데필"]
+    target_servers = ["파아그리오", "안타라스", "글루디오", "군터", "데포로쥬"]
 
     try:
         for target in target_servers:

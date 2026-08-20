@@ -2,7 +2,6 @@ import os
 import json
 import time
 import re
-from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -35,33 +34,34 @@ def get_driver():
     })
     return driver
 
-def parse_server_data(text, target):
-    """전체 텍스트에서 해당 서버명 주변의 가격 및 등락률을 정규식으로 안전하게 추출"""
+def parse_server_zone(lines, target):
+    """전체 텍스트 줄 목록에서 해당 서버 구역을 찾아 최저가 및 등락률 추출"""
     price = "0원"
     status = "0%"
 
-    # 1. 서버명이 등장하는 위치 탐색
-    if target not in text:
-        return price, status
+    for i, line in enumerate(lines):
+        if line == target or line.strip() == target:
+            # 서버명 아래 1~15줄 탐색
+            zone = lines[i+1 : min(len(lines), i+15)]
+            for item in zone:
+                # 다른 서버명을 만나면 탐색 중단
+                if item in ["파아그리오", "안타라스", "글루디오", "군터", "데포로쥬", "켄라우헬", "에바", "하딘", "발라카스", "오렌"]:
+                    break
 
-    # 서버명 이후 300자 내외 구역 슬라이싱
-    target_idx = text.find(target)
-    chunk = text[target_idx:target_idx + 400]
+                # 1. 가격 추출 ('원' 포함, '평균'/'최고' 제외)
+                if '원' in item and price == "0원":
+                    if '평균' not in item and '최고' not in item:
+                        digits = re.sub(r'[^\d]', '', item)
+                        if digits and int(digits) > 0:
+                            price = item.strip()
 
-    # 가격 패턴: 1~4자리 숫자(쉼표 포함) + 원 (예: 1,850원, 700원)
-    price_matches = re.findall(r'(\d{1,3}(?:,\d{3})*원)', chunk)
-    for p in price_matches:
-        # '평균 2,091원' 등 라벨이 붙은 가격을 거르고 순수 최저/기준 가격 타겟팅
-        p_clean = p.replace(',', '').replace('원', '')
-        if p_clean.isdigit() and int(p_clean) > 0:
-            price = p
-            # 첫 번째 발견된 가격이 보통 해당 서버의 기준 시세
+                # 2. 등락률 추출 ('%' 포함)
+                if '%' in item and status == "0%":
+                    if '상승' not in item:
+                        match = re.search(r'([+-]?\d+(?:\.\d+)?%)', item)
+                        if match:
+                            status = match.group(1)
             break
-
-    # 등락률 패턴: (+/-)숫자.% (예: +14.8%, -11.4%, +0.0%, 0%)
-    status_matches = re.findall(r'([+-]?\d+(?:\.\d+)?%)', chunk)
-    if status_matches:
-        status = status_matches[0]
 
     return price, status
 
@@ -72,58 +72,47 @@ def get_lineage_prices():
     driver = get_driver()
 
     try:
+        main_url = "https://enchant-lab.com/market"
+        print(f"🌐 [마켓 통합 페이지] 1회 접속 시도 ➔ {main_url}")
+        driver.get(main_url)
+
+        # 전체 목록 로딩 대기
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except Exception:
+            pass
+
+        # 렌더링 완료 대기 및 전체 리스트 확보
+        time.sleep(5.0)
+
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+        lines = [l.strip() for l in body_text.split('\n') if l.strip()]
+
         for target in target_servers:
-            current_price = "0원"
-            change_status = "0%"
+            price, status = parse_server_zone(lines, target)
 
-            try:
-                encoded_target = quote(target)
-                direct_url = f"https://enchant-lab.com/market/{encoded_target}"
-                print(f"🌐 [{target}] 다이렉트 주소 이동 시도 ➔ https://enchant-lab.com/market/{target}")
-
-                # 페이지 이동
-                driver.get(direct_url)
-
-                # 페이지 렌더링 완료 대기 (최대 12초)
-                try:
-                    WebDriverWait(driver, 12).until(
-                        EC.presence_of_element_located((By.XPATH, f"//*[contains(text(), '{target}')]"))
-                    )
-                except Exception:
-                    pass
-
-                # 리액트 상태 업데이트 안정화 대기
-                time.sleep(4.0)
-
-                body_text = driver.find_element(By.TAG_NAME, "body").text
-
-                # 1차 정규식 파싱 시도
-                current_price, change_status = parse_server_data(body_text, target)
-
-                # 만약 파싱 실패 시, 줄 단위 백업 탐색
-                if current_price == "0원":
-                    lines = [l.strip() for l in body_text.split('\n') if l.strip()]
-                    for i, line in enumerate(lines):
-                        if target in line:
-                            scan_zone = lines[max(0, i-2):min(len(lines), i+25)]
-                            for item in scan_zone:
-                                if '원' in item and current_price == "0원":
-                                    if '평균' not in item and '최고' not in item and len(item) < 12:
-                                        current_price = item
-                                if '%' in item and change_status == "0%":
-                                    if '상승' not in item and len(item) < 10:
-                                        change_status = item.replace('전일 대비', '').strip()
-                            break
-
-            except Exception as item_err:
-                print(f"⚠️ {target} 서버 처리 중 예외 발생: {item_err}")
+            # 백업: 전체 텍스트 내 정규식 탐색
+            if price == "0원" and target in body_text:
+                t_idx = body_text.find(target)
+                chunk = body_text[t_idx : t_idx + 350]
+                p_match = re.findall(r'(\d{1,3}(?:,\d{3})*원)', chunk)
+                for p in p_match:
+                    p_clean = p.replace(',', '').replace('원', '')
+                    if p_clean.isdigit() and int(p_clean) > 0:
+                        price = p
+                        break
+                s_match = re.search(r'([+-]?\d+(?:\.\d+)?%)', chunk)
+                if s_match:
+                    status = s_match.group(1)
 
             prices_data.append({
                 "source": target,
-                "price": current_price,
-                "status": change_status
+                "price": price,
+                "status": status
             })
-            print(f"📢 [수집 기록 완료] {target} ➔ 가격: {current_price} | 상태: {change_status}")
+            print(f"📢 [수집 기록 완료] {target} ➔ 가격: {price} | 상태: {status}")
 
     except Exception as e:
         print(f"❌ 크롤링 치명적 에러: {e}")

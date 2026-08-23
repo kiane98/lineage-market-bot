@@ -34,8 +34,14 @@ def get_driver():
     })
     return driver
 
-def parse_server_zone(lines, target):
-    """서버 카드 구역을 명확히 격리하여 가격 및 등락률 정밀 추출"""
+def parse_server_data(lines, target):
+    """
+    화면 텍스트 구조:
+    [서버명]
+    평균 1,963원 · HEAT 49.6
+    1,835원   <-- 실제 현재가
+    -3.2%     <-- 실제 등락률
+    """
     price = "0원"
     status = "0%"
 
@@ -49,27 +55,31 @@ def parse_server_zone(lines, target):
 
     for i, line in enumerate(lines):
         if line.strip() == target:
-            # 대상 서버명 다음 줄부터 다음 서버명이 나오기 전까지 슬라이스
-            zone = []
-            for item in lines[i+1 : min(len(lines), i+20)]:
-                if item.strip() in all_servers and item.strip() != target:
+            # 대상 서버명 다음 라인부터 다음 서버명이 나오기 전까지 슬라이스
+            card_lines = []
+            for sub_line in lines[i+1 : min(len(lines), i+15)]:
+                clean = sub_line.strip()
+                if clean in all_servers and clean != target:
                     break
-                zone.append(item.strip())
+                card_lines.append(clean)
 
-            # 1. 가격 추출 (평균/최고 제외한 최저/기준 시세)
-            for item in zone:
+            # 슬라이스된 구역 내 파싱
+            for item in card_lines:
+                # 1. 가격 추출 ('평균', '최고' 단어가 들어간 줄은 엄격히 제외)
                 if '원' in item and price == "0원":
                     if '평균' not in item and '최고' not in item:
+                        # 숫자와 쉼표, 원만 남겨서 가격 형태인지 검증
                         digits = re.sub(r'[^\d]', '', item)
-                        if digits and int(digits) > 0:
+                        if digits and int(digits) > 0 and len(digits) <= 6:
                             price = item
 
-                # 2. 등락률 추출
+                # 2. 등락률 추출 (+, -, % 패턴)
                 if '%' in item and status == "0%":
-                    if '상승' not in item:
+                    if '상승' not in item and '하락' not in item:
                         match = re.search(r'([+-]?\d+(?:\.\d+)?%)', item)
                         if match:
                             status = match.group(1)
+
             break
 
     return price, status
@@ -85,7 +95,6 @@ def get_lineage_prices():
         print(f"🌐 [마켓 통합 페이지] 1회 접속 시도 ➔ {main_url}")
         driver.get(main_url)
 
-        # 전체 목록 로딩 대기
         try:
             WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
@@ -93,32 +102,13 @@ def get_lineage_prices():
         except Exception:
             pass
 
-        # 렌더링 완료 대기 및 전체 리스트 확보
         time.sleep(5.0)
 
         body_text = driver.find_element(By.TAG_NAME, "body").text
         lines = [l.strip() for l in body_text.split('\n') if l.strip()]
 
         for target in target_servers:
-            price, status = parse_server_zone(lines, target)
-
-            # 백업: 전체 텍스트 내 정규식 탐색
-            if (price == "0원" or status == "0%") and target in body_text:
-                t_idx = body_text.find(target)
-                chunk = body_text[t_idx : t_idx + 350]
-                
-                if price == "0원":
-                    p_match = re.findall(r'(\d{1,3}(?:,\d{3})*원)', chunk)
-                    for p in p_match:
-                        p_clean = p.replace(',', '').replace('원', '')
-                        if p_clean.isdigit() and int(p_clean) > 0:
-                            price = p
-                            break
-                            
-                if status == "0%":
-                    s_match = re.search(r'([+-]?\d+(?:\.\d+)?%)', chunk)
-                    if s_match:
-                        status = s_match.group(1)
+            price, status = parse_server_data(lines, target)
 
             prices_data.append({
                 "source": target,

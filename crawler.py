@@ -34,53 +34,42 @@ def get_driver():
     })
     return driver
 
-def parse_server_data(lines, target):
+def extract_server_data(full_text, target):
     """
-    화면 텍스트 구조:
-    [서버명]
-    평균 1,963원 · HEAT 49.6
-    1,835원   <-- 실제 현재가
-    -3.2%     <-- 실제 등락률
+    정규식 패턴:
+    [서버명] (공백/줄바꿈)
+    평균 ... (공백/줄바꿈)
+    [실제시세: 숫자,원] (공백/줄바꿈)
+    [등락률: +/-%]
     """
     price = "0원"
     status = "0%"
 
-    all_servers = [
-        "안타라스", "파아그리오", "글루디오", "아스테어", "오렌", "크리스터", 
-        "에바", "데포로쥬", "발라카스", "사이하", "하딘", "발센", "어레인", 
-        "세바스챤", "하이네", "가드리아", "이실로테", "캐스톨", "오웬", "린델", 
-        "켄라우헬", "아툰", "데컨", "마프르", "군터", "질리언", "로엔그린", 
-        "듀크데필", "케레니스", "조우", "아인하사드"
-    ]
+    # 1. 정규식 완벽 패턴: 서버명 -> 평균줄 -> 현재가 -> 등락률
+    pattern = rf"{target}\s+평균[^\n\r]*[\n\r]+\s*([0-9,]+원)\s*[\n\r]+\s*([+-]?[0-9.]+\%)"
+    match = re.search(pattern, full_text)
 
-    for i, line in enumerate(lines):
-        if line.strip() == target:
-            # 대상 서버명 다음 라인부터 다음 서버명이 나오기 전까지 슬라이스
-            card_lines = []
-            for sub_line in lines[i+1 : min(len(lines), i+15)]:
-                clean = sub_line.strip()
-                if clean in all_servers and clean != target:
-                    break
-                card_lines.append(clean)
+    if match:
+        price = match.group(1).strip()
+        status = match.group(2).strip()
+        return price, status
 
-            # 슬라이스된 구역 내 파싱
-            for item in card_lines:
-                # 1. 가격 추출 ('평균', '최고' 단어가 들어간 줄은 엄격히 제외)
-                if '원' in item and price == "0원":
-                    if '평균' not in item and '최고' not in item:
-                        # 숫자와 쉼표, 원만 남겨서 가격 형태인지 검증
-                        digits = re.sub(r'[^\d]', '', item)
-                        if digits and int(digits) > 0 and len(digits) <= 6:
-                            price = item
-
-                # 2. 등락률 추출 (+, -, % 패턴)
-                if '%' in item and status == "0%":
-                    if '상승' not in item and '하락' not in item:
-                        match = re.search(r'([+-]?\d+(?:\.\d+)?%)', item)
-                        if match:
-                            status = match.group(1)
-
-            break
+    # 2. 백업 패턴: 줄바꿈 형태가 다른 경우 (서버명 뒤 400자 내에서 추출)
+    if target in full_text:
+        start_idx = full_text.find(target)
+        chunk = full_text[start_idx : start_idx + 400]
+        
+        # '평균' 라인을 제외하고 가격 찾기
+        lines = [l.strip() for l in chunk.split('\n') if l.strip()]
+        for l in lines:
+            if '원' in l and '평균' not in l and '최고' not in l and price == "0원":
+                digits = re.sub(r'[^\d]', '', l)
+                if digits and int(digits) > 0 and len(digits) <= 6:
+                    price = l
+            if '%' in l and '상승' not in l and '하락' not in l and status == "0%":
+                m = re.search(r'([+-]?\d+(?:\.\d+)?%)', l)
+                if m:
+                    status = m.group(1)
 
     return price, status
 
@@ -105,10 +94,9 @@ def get_lineage_prices():
         time.sleep(5.0)
 
         body_text = driver.find_element(By.TAG_NAME, "body").text
-        lines = [l.strip() for l in body_text.split('\n') if l.strip()]
 
         for target in target_servers:
-            price, status = parse_server_data(lines, target)
+            price, status = extract_server_data(body_text, target)
 
             prices_data.append({
                 "source": target,

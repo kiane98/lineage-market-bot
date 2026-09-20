@@ -2,6 +2,7 @@ import os
 import json
 import time
 import re
+import requests
 from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -10,6 +11,30 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+
+def send_telegram_alert(message: str):
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
+    if not bot_token or not chat_id:
+        print("[Telegram] 토큰 또는 채팅 ID가 환경변수에 없습니다.")
+        return
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        if res.status_code == 200:
+            print("[Telegram] 알림 전송 완료")
+        else:
+            print(f"[Telegram] 전송 실패: {res.text}")
+    except Exception as e:
+        print(f"[Telegram] 통신 오류: {e}")
 
 def get_driver():
     chrome_options = Options()
@@ -35,17 +60,9 @@ def get_driver():
     return driver
 
 def extract_server_data(full_text, target):
-    """
-    정규식 패턴:
-    [서버명] (공백/줄바꿈)
-    평균 ... (공백/줄바꿈)
-    [실제시세: 숫자,원] (공백/줄바꿈)
-    [등락률: +/-%]
-    """
     price = "0원"
     status = "0%"
 
-    # 1. 정규식 완벽 패턴: 서버명 -> 평균줄 -> 현재가 -> 등락률
     pattern = rf"{target}\s+평균[^\n\r]*[\n\r]+\s*([0-9,]+원)\s*[\n\r]+\s*([+-]?[0-9.]+\%)"
     match = re.search(pattern, full_text)
 
@@ -54,12 +71,10 @@ def extract_server_data(full_text, target):
         status = match.group(2).strip()
         return price, status
 
-    # 2. 백업 패턴: 줄바꿈 형태가 다른 경우 (서버명 뒤 400자 내에서 추출)
     if target in full_text:
         start_idx = full_text.find(target)
         chunk = full_text[start_idx : start_idx + 400]
         
-        # '평균' 라인을 제외하고 가격 찾기
         lines = [l.strip() for l in chunk.split('\n') if l.strip()]
         for l in lines:
             if '원' in l and '평균' not in l and '최고' not in l and price == "0원":
@@ -107,29 +122,57 @@ def get_lineage_prices():
 
     except Exception as e:
         print(f"❌ 크롤링 치명적 에러: {e}")
+        send_telegram_alert(
+            f"🚨 <b>[리니지 크롤러] 실행 중단 에러</b>\n\n"
+            f"• 에러 내용: <code>{str(e)}</code>"
+        )
     finally:
         driver.quit()
 
     return prices_data
 
 def update_json():
-    new_prices = get_lineage_prices()
+    try:
+        new_prices = get_lineage_prices()
 
-    failed_items = [p['source'] for p in new_prices if p['price'] == "0원"]
-    if failed_items:
-        print("\n" + "="*50)
-        print(f"🚨 [빌드 실패] 시세 수집 누락 서버: {', '.join(failed_items)}")
-        print("="*50 + "\n")
-        exit(1)
+        failed_items = [p['source'] for p in new_prices if p['price'] == "0원"]
+        if failed_items:
+            err_msg = f"시세 수집 누락 서버: {', '.join(failed_items)}"
+            print("\n" + "="*50)
+            print(f"🚨 [빌드 실패] {err_msg}")
+            print("="*50 + "\n")
 
-    kst = timezone(timedelta(hours=9))
-    current_time = datetime.now(kst).strftime('%Y-%m-%d %H:%M')
+            send_telegram_alert(
+                f"🚨 <b>[리니지 아데나 수집 누락]</b>\n\n"
+                f"• 사유: <code>{err_msg}</code>\n"
+                f"• 조치: 0원 데이터 업데이트를 차단하기 위해 중단되었습니다."
+            )
+            exit(1)
 
-    data = {"last_updated": current_time, "prices": new_prices}
+        kst = timezone(timedelta(hours=9))
+        current_time = datetime.now(kst).strftime('%Y-%m-%d %H:%M')
 
-    with open('market_stats.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-    print(f"✅ 리니지 마켓 시세 업데이트 완료: {current_time}")
+        data = {"last_updated": current_time, "prices": new_prices}
+
+        with open('market_stats.json', 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        print(f"✅ 리니지 마켓 시세 업데이트 완료: {current_time}")
+
+        # 정상 완료 텔레그램 리포트 발송
+        price_lines = "\n".join([f"• <b>{p['source']}</b>: {p['price']} ({p['status']})" for p in new_prices])
+        success_msg = (
+            f"✅ <b>[리니지 클래식] 아데나 시세 갱신 성공</b>\n\n"
+            f"{price_lines}\n\n"
+            f"📅 갱신 시각: {current_time} (KST)"
+        )
+        send_telegram_alert(success_msg)
+
+    except Exception as e:
+        send_telegram_alert(
+            f"🚨 <b>[리니지 업데이트 프로세스 예외]</b>\n\n"
+            f"• 에러 내용: <code>{str(e)}</code>"
+        )
+        raise e
 
 if __name__ == "__main__":
     update_json()

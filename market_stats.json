@@ -1,30 +1,30 @@
 {
-    "last_updated": "2026-11-20 10:46",
+    "last_updated": "2026-11-21 01:58",
     "prices": [
         {
             "source": "파아그리오",
-            "price": "500원",
-            "status": "-9.1%"
+            "price": "499원",
+            "status": "-4.0%"
         },
         {
             "source": "안타라스",
             "price": "540원",
-            "status": "-4.3%"
+            "status": "+0.0%"
         },
         {
             "source": "글루디오",
-            "price": "537원",
-            "status": "-7.4%"
+            "price": "518원",
+            "status": "-4.1%"
         },
         {
             "source": "군터",
-            "price": "550원",
-            "status": "+1.9%"
+            "price": "529원",
+            "status": "-3.8%"
         },
         {
             "source": "데포로쥬",
-            "price": "540원",
-            "status": "-4.4%"
+            "price": "525원",
+            "status": "-3.5%"
         }
     ]
 }
